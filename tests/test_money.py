@@ -49,3 +49,26 @@ def test_user_amount_rejects_bad_input(raw):
 
     with pytest.raises(AmountError):
         tiyn_from_user(raw)
+
+
+def test_format_tenge_matches_spec_samples():
+    from app.money import format_tenge
+
+    assert format_tenge(100_000_000) == "1 000 000 ₸"
+    assert format_tenge(109_000_000) == "1 090 000 ₸"
+    assert format_tenge(0) == "0 ₸"
+
+
+def test_format_tenge_hides_zero_cents_and_shows_real_ones():
+    from app.money import format_tenge
+
+    assert format_tenge(8_000_000) == "80 000 ₸"
+    assert format_tenge(8_000_050) == "80 000,50 ₸"
+
+
+def test_format_delta_signs():
+    from app.money import format_delta
+
+    assert format_delta(19_000_000) == "+190 000 ₸"
+    assert format_delta(-10_000_000) == "−100 000 ₸"
+    assert format_delta(0) == "0 ₸"
