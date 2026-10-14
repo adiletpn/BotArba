@@ -22,7 +22,7 @@ import logging
 
 import aiohttp
 
-from app.clock import format_date_ru, now_utc
+from app.clock import format_date_ru, now_utc, today_local
 from app.db.models import OPERATION_LABELS
 from app.money import TIYN_PER_TENGE
 
@@ -93,10 +93,24 @@ async def build_snapshot(repo, tz) -> dict:
             int(row["payments"]),
         ])
 
+    # Показатели для шапки листа «Сводка по дням». Считаются здесь, а не
+    # формулами в таблице: формулы живут в ячейках, а лист перезаписывается
+    # целиком — их бы стирало при каждой выгрузке.
+    today = today_local(tz)
+    totals = await repo.day_totals(today)
+
     return {
         "operations": {"header": list(OPERATIONS_HEADER), "rows": operation_rows},
         "daily": {"header": list(DAILY_HEADER), "rows": daily_rows},
-        "generated_at": now_utc().astimezone(tz).strftime("%d.%m.%Y %H:%M"),
+        "summary": {
+            "balance": _tenge(await repo.balance()),
+            "today_income": _tenge(totals["income"]),
+            "today_expense": _tenge(totals["expense"]),
+            "today_payments": totals["income_count"],
+            "today": format_date_ru(today),
+            "operations_total": len(operation_rows),
+        },
+        "generated_at": now_utc().astimezone(tz).strftime("%d.%m.%Y в %H:%M"),
     }
 
 
