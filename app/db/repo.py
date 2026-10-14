@@ -10,6 +10,8 @@ import logging
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+from collections.abc import Callable
+
 from app.clock import local_date_of, now_utc, to_utc_text
 from app.db.database import Database
 from app.db.models import Operation, OperationSource, OperationType
@@ -21,10 +23,29 @@ class Repo:
     def __init__(self, db: Database, tz: ZoneInfo) -> None:
         self._db = db
         self._tz = tz
+        self._on_change: Callable[[], None] | None = None
 
     @property
     def tz(self) -> ZoneInfo:
         return self._tz
+
+    def set_change_listener(self, listener: Callable[[], None] | None) -> None:
+        """Подписаться на «данные изменились».
+
+        Нужно выгрузке в Google Таблицы. Репозиторий при этом о таблицах
+        ничего не знает — он просто дёргает колбэк, поэтому слой доступа к
+        базе не зависит от интеграций.
+        """
+        self._on_change = listener
+
+    def _changed(self) -> None:
+        if self._on_change is None:
+            return
+        try:
+            self._on_change()
+        except Exception:
+            # Сломанный слушатель не должен ронять запись операции.
+            logger.exception("Слушатель изменений упал")
 
     # ---------- users / белый список ----------
 
@@ -126,6 +147,8 @@ class Repo:
         if row is None:
             logger.info("Операция с external_id=%s уже записана, пропуск", external_id)
             return None
+
+        self._changed()
         return int(row["id"])
 
     async def get_operation(self, operation_id: int) -> Operation | None:
@@ -150,6 +173,9 @@ class Repo:
         ) as cursor:
             changed = cursor.rowcount
         await self._db.conn.commit()
+
+        if changed:
+            self._changed()
         return changed > 0
 
     async def has_start_balance(self) -> bool:
@@ -184,6 +210,9 @@ class Repo:
         ) as cursor:
             row = await cursor.fetchone()
         await self._db.conn.commit()
+
+        if row is not None:
+            self._changed()
         return int(row["id"]) if row else None
 
     # ---------- агрегаты ----------
