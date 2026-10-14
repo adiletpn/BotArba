@@ -78,3 +78,31 @@ async def set_summary_time(
         parse_mode="HTML",
         reply_markup=keyboards.main_keyboard(),
     )
+
+
+@router.message(Command("export"))
+async def export_now(message: Message, repo, settings) -> None:
+    """Выгрузить в Google Таблицы немедленно.
+
+    Обычно выгрузка идёт сама после каждой операции, но команда нужна:
+    после долгой недоступности Google владельцу важно увидеть результат
+    сразу, а не ждать следующего планового запуска.
+    """
+    if not settings.sheets_enabled:
+        await message.answer(texts.EXPORT_DISABLED)
+        return
+
+    from app.services.sheets import build_snapshot, push_snapshot
+
+    notice = await message.answer(texts.EXPORT_RUNNING)
+    snapshot = await build_snapshot(repo, settings.timezone)
+
+    if await push_snapshot(settings, snapshot):
+        await notice.edit_text(
+            texts.EXPORT_DONE.format(
+                operations=len(snapshot["operations"]["rows"]),
+                days=len(snapshot["daily"]["rows"]),
+            )
+        )
+    else:
+        await notice.edit_text(texts.EXPORT_FAILED)

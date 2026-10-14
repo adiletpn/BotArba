@@ -88,6 +88,18 @@ SETTINGS_VIEW = (
     "Последняя сверка с ApiPay: {last_sync}\n\n"
     "Сменить время сводки: <code>/settime 21:00</code>"
 )
+EXPORT_DISABLED = (
+    "Выгрузка в Google Таблицы не настроена.\n\n"
+    "Нужны переменные SHEETS_WEBAPP_URL и SHEETS_TOKEN — "
+    "инструкция в integrations/google_sheets/README.md"
+)
+EXPORT_RUNNING = "⏳ Выгружаю в Google Таблицы…"
+EXPORT_DONE = "✅ Таблица обновлена: операций {operations}, дней {days}."
+EXPORT_FAILED = (
+    "⚠️ Не получилось выгрузить — Google не ответил или скрипт отклонил запрос.\n"
+    "Данные в боте целы, выгрузка повторится автоматически."
+)
+
 SETTIME_USAGE = "Укажите время в формате ЧЧ:ММ, например <code>/settime 21:00</code>"
 SETTIME_DONE = (
     "✅ Вечерняя сводка перенесена на <b>{summary_time}</b> ({timezone}).\n"
