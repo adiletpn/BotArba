@@ -5,9 +5,12 @@ from __future__ import annotations
 from datetime import timedelta
 
 from aiogram import F, Router
+from aiogram.filters import Command, StateFilter
+from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
 
 from app.bot import keyboards, texts
+from app.bot.filters import says
 from app.bot.render import as_pre
 from app.clock import now_utc, today_local
 from app.services.summary import build_day_summary, render_summary
@@ -39,9 +42,19 @@ async def summary_text(repo, settings) -> str:
 
 
 @router.message(F.text == texts.BTN_BALANCE)
-async def show_balance(message: Message, repo, settings) -> None:
+@router.message(Command("balance"))
+async def show_balance(message: Message, state: FSMContext, repo, settings) -> None:
+    # Кнопка работает всегда, в том числе посреди незаконченного диалога —
+    # иначе из него было бы не выйти, кроме как «Отменой».
+    await state.clear()
     await message.answer(
         as_pre(await summary_text(repo, settings)),
         parse_mode="HTML",
         reply_markup=keyboards.main_keyboard(),
     )
+
+
+@router.message(StateFilter(None), says(*texts.SAY_BALANCE))
+async def show_balance_by_word(message: Message, state: FSMContext, repo, settings) -> None:
+    """«баланс» словом. Только вне диалога: внутри это может быть статья расхода."""
+    await show_balance(message, state, repo, settings)

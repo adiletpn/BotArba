@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 from aiogram import F, Router
+from aiogram.filters import Command, StateFilter
+from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
 
 from app.bot import keyboards, texts
+from app.bot.filters import says
 from app.bot.render import as_pre
 from app.db.models import OPERATION_LABELS
 from app.money import format_delta
@@ -15,7 +18,9 @@ router = Router(name="history")
 HISTORY_LIMIT = 10
 
 @router.message(F.text == texts.BTN_HISTORY)
-async def show_history(message: Message, repo, settings) -> None:
+@router.message(Command("history"))
+async def show_history(message: Message, state: FSMContext, repo, settings) -> None:
+    await state.clear()
     operations = await repo.recent_operations(HISTORY_LIMIT)
     if not operations:
         await message.answer(texts.HISTORY_EMPTY, reply_markup=keyboards.main_keyboard())
@@ -41,3 +46,8 @@ async def show_history(message: Message, repo, settings) -> None:
         parse_mode="HTML",
         reply_markup=keyboards.main_keyboard(),
     )
+
+
+@router.message(StateFilter(None), says(*texts.SAY_HISTORY))
+async def show_history_by_word(message: Message, state: FSMContext, repo, settings) -> None:
+    await show_history(message, state, repo, settings)
