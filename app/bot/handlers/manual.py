@@ -10,11 +10,12 @@ import logging
 import re
 
 from aiogram import Router
-from aiogram.filters import Command
+from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
 
 from app.bot import keyboards, texts
+from app.bot.filters import says
 from app.bot.states import Correction, ManualIncome
 from app.money import AmountError, format_tenge, tiyn_from_user
 
@@ -25,6 +26,7 @@ SKIP_COMMENT = {"-", "–", "нет", "без комментария"}
 
 
 @router.message(Command("income"))
+@router.message(StateFilter(None), says(*texts.SAY_INCOME))
 async def income_start(message: Message, state: FSMContext) -> None:
     await state.set_state(ManualIncome.waiting_amount)
     await message.answer(texts.ASK_INCOME_AMOUNT, reply_markup=keyboards.cancel_keyboard())
@@ -78,6 +80,7 @@ _SIGNED = re.compile(r"^\s*([+−-])?\s*(.+)$", re.DOTALL)
 
 
 @router.message(Command("correct"))
+@router.message(StateFilter(None), says(*texts.SAY_CORRECT))
 async def correct_start(message: Message, state: FSMContext) -> None:
     await state.set_state(Correction.waiting_amount)
     await message.answer(

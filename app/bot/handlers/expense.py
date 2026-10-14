@@ -10,10 +10,12 @@ from __future__ import annotations
 import logging
 
 from aiogram import F, Router
+from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 from app.bot import keyboards, texts
+from app.bot.filters import says
 from app.bot.states import Expense
 from app.money import AmountError, format_tenge, tiyn_from_user
 
@@ -29,6 +31,8 @@ async def cancel_input(message: Message, state: FSMContext) -> None:
 
 
 @router.message(F.text == texts.BTN_EXPENSE)
+@router.message(Command("expense"))
+@router.message(StateFilter(None), says(*texts.SAY_EXPENSE))
 async def expense_start(message: Message, state: FSMContext) -> None:
     await state.set_state(Expense.waiting_amount)
     await message.answer(texts.ASK_EXPENSE_AMOUNT, parse_mode="HTML")

@@ -9,10 +9,11 @@ from __future__ import annotations
 import logging
 
 from aiogram import Router
-from aiogram.filters import Command, CommandObject
+from aiogram.filters import Command, CommandObject, StateFilter
 from aiogram.types import Message
 
 from app.bot import keyboards, texts
+from app.bot.filters import says
 from app.clock import format_time_local
 from app.scheduler import reschedule_summary
 
@@ -31,6 +32,7 @@ def _parse_time(raw: str) -> tuple[int, int] | None:
 
 
 @router.message(Command("settings"))
+@router.message(StateFilter(None), says(*texts.SAY_SETTINGS))
 async def show_settings(message: Message, repo, settings) -> None:
     hour, minute = await repo.get_summary_time(
         (settings.summary_hour, settings.summary_minute)
@@ -81,6 +83,7 @@ async def set_summary_time(
 
 
 @router.message(Command("export"))
+@router.message(StateFilter(None), says(*texts.SAY_EXPORT))
 async def export_now(message: Message, repo, settings) -> None:
     """Выгрузить в Google Таблицы немедленно.
 

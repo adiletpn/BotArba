@@ -25,9 +25,13 @@ def create_bot(token: str) -> Bot:
 
 #: Меню команд в Telegram. Регистрируется при старте, чтобы не настраивать
 #: его руками в BotFather и не расходиться с тем, что реально реализовано.
-#: Баланс, Расход и История здесь не нужны — они на постоянной клавиатуре.
+#: Кнопки продублированы командами: в меню Telegram видно всё, что бот умеет,
+#: и до любого действия можно добраться без клавиатуры.
 BOT_COMMANDS = (
     BotCommand(command="start", description="Запуск и стартовый баланс"),
+    BotCommand(command="balance", description="Баланс и сводка за сегодня"),
+    BotCommand(command="expense", description="Внести расход"),
+    BotCommand(command="history", description="Последние 10 операций"),
     BotCommand(command="income", description="Ручное поступление (наличные, перевод)"),
     BotCommand(command="correct", description="Корректировка баланса"),
     BotCommand(command="settings", description="Настройки и время сводки"),

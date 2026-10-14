@@ -3,15 +3,17 @@
 from __future__ import annotations
 
 from aiogram import F, Router
-from aiogram.filters import Command
+from aiogram.filters import Command, StateFilter
 from aiogram.types import Message
 
 from app.bot import keyboards, texts
+from app.bot.filters import says
 
 router = Router(name="misc")
 
 
 @router.message(Command("help"))
+@router.message(StateFilter(None), says(*texts.SAY_HELP))
 async def help_command(message: Message) -> None:
     """Напомнить, что умеет бот, не перезапуская диалог со /start."""
     await message.answer(
