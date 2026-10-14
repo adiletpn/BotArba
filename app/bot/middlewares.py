@@ -40,7 +40,7 @@ class WhitelistMiddleware(BaseMiddleware):
             logger.warning(
                 "Отказ в доступе: id=%s username=%s", user.id, user.username
             )
-            await self._deny(event)
+            await self._deny(event, user.id)
             return None
 
         if user.full_name:
@@ -50,13 +50,17 @@ class WhitelistMiddleware(BaseMiddleware):
         return await handler(event, data)
 
     @staticmethod
-    async def _deny(event: TelegramObject) -> None:
-        """Сказать постороннему «нет» — и больше ничего.
+    async def _deny(event: TelegramObject, telegram_id: int) -> None:
+        """Сказать «нет» — и ничего о владельце.
 
-        Ни баланса, ни названия ИП, ни подсказок: отказ не должен становиться
-        источником информации о владельце.
+        В отказ включён Telegram ID самого обратившегося, и только он. Без
+        этого свежую установку нельзя запустить: /whoami стоит за этой же
+        проверкой, поэтому первый владелец не мог бы узнать свой id, чтобы
+        вписать его в OWNER_TELEGRAM_IDS. Своё же id пользователь и так знает,
+        так что это не утечка.
         """
+        text = texts.ACCESS_DENIED.format(telegram_id=telegram_id)
         if isinstance(event, Message):
-            await event.answer(texts.ACCESS_DENIED)
+            await event.answer(text)
         elif isinstance(event, CallbackQuery):
-            await event.answer(texts.ACCESS_DENIED, show_alert=True)
+            await event.answer(text, show_alert=True)

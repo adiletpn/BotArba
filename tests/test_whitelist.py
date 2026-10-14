@@ -44,7 +44,10 @@ async def test_stranger_is_rejected_and_handler_never_runs(repo, monkeypatch):
     await middleware(handler, event, {"event_from_user": event.from_user})
 
     assert calls == [], "хендлер не должен вызываться для постороннего"
-    assert replies == [texts.ACCESS_DENIED]
+    assert replies == [texts.ACCESS_DENIED.format(telegram_id=STRANGER_ID)]
+    # В отказе есть только свой id обратившегося — ни баланса, ни владельца
+    assert str(STRANGER_ID) in replies[0]
+    assert str(OWNER_ID) not in replies[0]
 
 
 async def _noop():
