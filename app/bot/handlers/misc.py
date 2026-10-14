@@ -11,6 +11,14 @@ from app.bot import keyboards, texts
 router = Router(name="misc")
 
 
+@router.message(Command("help"))
+async def help_command(message: Message) -> None:
+    """Напомнить, что умеет бот, не перезапуская диалог со /start."""
+    await message.answer(
+        texts.CAPABILITIES, parse_mode="HTML", reply_markup=keyboards.main_keyboard()
+    )
+
+
 @router.message(Command("whoami"))
 async def whoami(message: Message) -> None:
     """Подсказать Telegram ID — им заполняется OWNER_TELEGRAM_IDS."""

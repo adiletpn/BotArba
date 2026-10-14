@@ -22,7 +22,11 @@ router = Router(name="start")
 async def cmd_start(message: Message, state: FSMContext, repo, settings) -> None:
     """Поздороваться и, если стартовой суммы ещё нет, попросить её."""
     await state.clear()
-    await message.answer(texts.START_GREETING, reply_markup=keyboards.main_keyboard())
+    await message.answer(
+        texts.START_GREETING,
+        parse_mode="HTML",
+        reply_markup=keyboards.main_keyboard(),
+    )
 
     if await repo.has_start_balance():
         return

@@ -34,6 +34,7 @@ BOT_COMMANDS = (
     BotCommand(command="settime", description="Сменить время сводки, напр. /settime 21:00"),
     BotCommand(command="export", description="Выгрузить в Google Таблицы сейчас"),
     BotCommand(command="whoami", description="Показать мой Telegram ID"),
+    BotCommand(command="help", description="Что умеет бот"),
 )
 
 
