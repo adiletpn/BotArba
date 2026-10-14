@@ -287,6 +287,50 @@ class Repo:
             rows = await cursor.fetchall()
         return [Operation.from_row(row) for row in rows]
 
+    async def all_operations(self, limit: int = 20_000) -> list[Operation]:
+        """Все операции по возрастанию — для выгрузки в таблицу.
+
+        Выгрузка перезаписывает лист целиком, поэтому порядок должен быть
+        стабильным и от старых к новым. Лимит — страховка от того, что за
+        годы таблица перестанет влезать в один запрос.
+        """
+        async with self._db.conn.execute(
+            """
+            SELECT * FROM operations
+            ORDER BY occurred_at ASC, id ASC
+            LIMIT ?
+            """,
+            (limit,),
+        ) as cursor:
+            rows = await cursor.fetchall()
+        return [Operation.from_row(row) for row in rows]
+
+    async def daily_rows(self) -> list[dict[str, int | str]]:
+        """Сводка по дням: поступления, расходы, корректировки за каждый день.
+
+        Отменённые операции исключены, возвраты сложены с поступлениями —
+        та же логика, что в дневной сводке бота, чтобы цифры в таблице и в
+        Telegram не расходились.
+        """
+        async with self._db.conn.execute(
+            """
+            SELECT
+                local_date,
+                COALESCE(SUM(CASE WHEN type IN ('income', 'refund')
+                                  THEN amount END), 0) AS income,
+                COALESCE(SUM(CASE WHEN type = 'expense' THEN amount END), 0) AS expense,
+                COALESCE(SUM(CASE WHEN type = 'correction' THEN amount END), 0) AS correction,
+                COALESCE(SUM(CASE WHEN type = 'start' THEN amount END), 0) AS start,
+                COUNT(CASE WHEN type = 'income' THEN 1 END) AS payments
+            FROM operations
+            WHERE is_cancelled = 0
+            GROUP BY local_date
+            ORDER BY local_date ASC
+            """
+        ) as cursor:
+            rows = await cursor.fetchall()
+        return [dict(row) for row in rows]
+
     async def count_apipay_operations(self, local_date: str) -> int:
         async with self._db.conn.execute(
             """
