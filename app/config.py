@@ -111,9 +111,18 @@ class Settings:
     backup_dir: Path
     backup_keep_days: int
 
+    sheets_webapp_url: str
+    sheets_token: str
+    sheets_sync_minutes: int
+
     @property
     def webhook_route(self) -> str:
         return f"/webhook/{self.apipay_webhook_path}"
+
+    @property
+    def sheets_enabled(self) -> bool:
+        """Без URL и токена выгрузка молча отключена — бот работает как обычно."""
+        return bool(self.sheets_webapp_url and self.sheets_token)
 
     @property
     def apipay_enabled(self) -> bool:
@@ -160,4 +169,7 @@ def load_settings(env_file: str | os.PathLike[str] | None = ".env") -> Settings:
         undo_window_minutes=_positive_int("UNDO_WINDOW_MINUTES", 10),
         backup_dir=Path(_optional("BACKUP_DIR", "./backups") or "./backups"),
         backup_keep_days=_positive_int("BACKUP_KEEP_DAYS", 14),
+        sheets_webapp_url=_optional("SHEETS_WEBAPP_URL"),
+        sheets_token=_optional("SHEETS_TOKEN"),
+        sheets_sync_minutes=_positive_int("SHEETS_SYNC_MINUTES", 10),
     )
