@@ -30,3 +30,32 @@ async def repo(tmp_path):
         yield repo
     finally:
         await db.close()
+
+
+@pytest_asyncio.fixture
+async def settings(tmp_path):
+    """Настройки для тестов — собираются напрямую, без .env."""
+    from pathlib import Path
+
+    from app.config import Settings
+
+    return Settings(
+        bot_token="123:TEST",
+        owner_ids=(OWNER_ID,),
+        apipay_api_key="test-key",
+        apipay_webhook_secret="whsec_test",
+        apipay_base_url="https://api.apipay.kz/api/v1",
+        apipay_sandbox=True,
+        apipay_webhook_path="apipay",
+        db_path=tmp_path / "test.db",
+        timezone=ALMATY,
+        timezone_name="Asia/Almaty",
+        summary_hour=21,
+        summary_minute=0,
+        web_host="127.0.0.1",
+        web_port=0,
+        sync_window_days=2,
+        undo_window_minutes=10,
+        backup_dir=Path(tmp_path / "backups"),
+        backup_keep_days=14,
+    )
