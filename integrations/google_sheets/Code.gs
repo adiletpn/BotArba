@@ -174,8 +174,34 @@ function drawTable(sheet, header, rows, startRow, options) {
       .setHorizontalAlignment('right');
   });
 
+  // Строки повыше: цифры не должны лепиться друг к другу.
+  for (let row = startRow + 1; row <= startRow + normalized.length; row++) {
+    sheet.setRowHeight(row, 26);
+  }
+
   sheet.setFrozenRows(startRow);
   return startRow + normalized.length;
+}
+
+/**
+ * Разлиновать таблицу.
+ *
+ * Скрытая сетка Sheets оставляет таблицу «висеть» в пустоте, особенно пока
+ * строк мало. Явные границы дают ей края и ведут глаз по строке.
+ */
+function drawBorders(sheet, headerRow, lastRow, width) {
+  const table = sheet.getRange(headerRow, 1, lastRow - headerRow + 1, width);
+  table.setBorder(true, true, true, true, true, true, RULE,
+                  SpreadsheetApp.BorderStyle.SOLID);
+
+  // Под шапкой — линия потолще: она отделяет заголовки от данных.
+  sheet.getRange(headerRow, 1, 1, width)
+    .setBorder(null, null, true, null, null, null, HEADER_BG,
+               SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
+
+  // Внешний контур тоже плотнее, иначе таблица расплывается по листу.
+  table.setBorder(true, true, true, true, null, null, '#c3c2b7',
+                  SpreadsheetApp.BorderStyle.SOLID);
 }
 
 /** Покрасить суммы по знаку: приход зелёным, расход красным. */
