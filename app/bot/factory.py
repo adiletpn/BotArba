@@ -6,7 +6,15 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.fsm.storage.memory import MemoryStorage
 
-from app.bot.handlers import balance, expense, history, manual, misc, start
+from app.bot.handlers import (
+    balance,
+    expense,
+    history,
+    manual,
+    misc,
+    settings as settings_handlers,
+    start,
+)
 from app.bot.middlewares import WhitelistMiddleware
 
 
@@ -38,6 +46,7 @@ def create_dispatcher(repo, settings) -> Dispatcher:
         undo.router,
         history.router,
         manual.router,
+        settings_handlers.router,
         misc.router,
     )
     return dispatcher

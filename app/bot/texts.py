@@ -81,4 +81,16 @@ HISTORY_EMPTY = "Операций пока нет."
 HISTORY_HEADER = "🧾 Последние операции"
 
 WHOAMI = "Ваш Telegram ID: <code>{telegram_id}</code>"
+
+SETTINGS_VIEW = (
+    "⚙️ Настройки\n\n"
+    "Вечерняя сводка: <b>{summary_time}</b> ({timezone})\n"
+    "Последняя сверка с ApiPay: {last_sync}\n\n"
+    "Сменить время сводки: <code>/settime 21:00</code>"
+)
+SETTIME_USAGE = "Укажите время в формате ЧЧ:ММ, например <code>/settime 21:00</code>"
+SETTIME_DONE = (
+    "✅ Вечерняя сводка перенесена на <b>{summary_time}</b> ({timezone}).\n"
+    "Перезапуск не нужен."
+)
 UNKNOWN_INPUT = "Не понял. Пользуйтесь кнопками ниже или командами /income, /correct."
