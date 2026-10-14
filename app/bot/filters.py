@@ -39,3 +39,14 @@ def any_of(*groups: Iterable[str]) -> Callable[[Message], bool]:
     for group in groups:
         phrases.extend(group)
     return says(*phrases)
+
+
+def not_command(message: Message) -> bool:
+    """Сообщение — не команда.
+
+    Хендлеры шагов диалога ловят ЛЮБОЙ текст, поэтому без этого фильтра
+    команда, набранная посреди ввода суммы, уходила им на разбор и получала
+    «Не понял сумму» вместо того, чтобы выполниться. Команда должна работать
+    всегда — она и есть способ выйти из застрявшего диалога.
+    """
+    return not (message.text or "").lstrip().startswith("/")
