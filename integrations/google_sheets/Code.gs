@@ -107,3 +107,84 @@ function prepareSheet(spreadsheet, name, tabColor) {
   sheet.setTabColor(tabColor);
   return sheet;
 }
+
+/**
+ * Нарисовать шапку таблицы и тело, вернуть номер первой строки данных.
+ * Общая часть обоих листов: шапка, чередование строк, выравнивание.
+ */
+function drawTable(sheet, header, rows, startRow, options) {
+  const width = header.length;
+
+  sheet.getRange(startRow, 1, 1, width)
+    .setValues([header])
+    .setBackground(HEADER_BG)
+    .setFontColor(HEADER_INK)
+    .setFontFamily(FONT)
+    .setFontSize(10)
+    .setFontWeight('bold')
+    .setVerticalAlignment('middle')
+    .setHorizontalAlignment('left');
+  sheet.setRowHeight(startRow, 32);
+
+  if (rows.length === 0) {
+    sheet.getRange(startRow + 1, 1)
+      .setValue('Пока нет данных')
+      .setFontColor(INK_MUTED)
+      .setFontFamily(FONT)
+      .setFontStyle('italic');
+    return startRow + 1;
+  }
+
+  // Строки могут быть разной длины, если бот обновится раньше скрипта —
+  // добиваем до ширины заголовка, иначе setValues падает.
+  const normalized = rows.map(function (row) {
+    const copy = row.slice(0, width);
+    while (copy.length < width) {
+      copy.push('');
+    }
+    return copy;
+  });
+
+  const body = sheet.getRange(startRow + 1, 1, normalized.length, width);
+  body.setValues(normalized)
+    .setFontFamily(FONT)
+    .setFontSize(10)
+    .setFontColor(INK_SOFT)
+    .setVerticalAlignment('middle');
+
+  // Чередование строк вместо линеек: глаз ведёт по строке сам,
+  // а сетка не спорит с цифрами.
+  const banding = body.applyRowBanding(SpreadsheetApp.BandingTheme.LIGHT_GREY, false, false);
+  banding.setHeaderRowColor(null)
+    .setFirstRowColor(SURFACE)
+    .setSecondRowColor(BAND);
+
+  (options.moneyColumns || []).forEach(function (column) {
+    sheet.getRange(startRow + 1, column, normalized.length, 1)
+      .setNumberFormat(MONEY_FORMAT)
+      .setHorizontalAlignment('right');
+  });
+
+  (options.countColumns || []).forEach(function (column) {
+    sheet.getRange(startRow + 1, column, normalized.length, 1)
+      .setNumberFormat(COUNT_FORMAT)
+      .setHorizontalAlignment('right');
+  });
+
+  sheet.setFrozenRows(startRow);
+  return startRow + normalized.length;
+}
+
+/** Покрасить суммы по знаку: приход зелёным, расход красным. */
+function moneySignRules(sheet, column, firstDataRow, lastRow) {
+  if (lastRow < firstDataRow) {
+    return [];
+  }
+  const range = sheet.getRange(firstDataRow, column, lastRow - firstDataRow + 1, 1);
+  return [
+    SpreadsheetApp.newConditionalFormatRule()
+      .whenNumberGreaterThan(0).setFontColor(POSITIVE).setRanges([range]).build(),
+    SpreadsheetApp.newConditionalFormatRule()
+      .whenNumberLessThan(0).setFontColor(NEGATIVE).setRanges([range]).build(),
+  ];
+}
