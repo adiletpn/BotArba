@@ -36,3 +36,74 @@ const NEGATIVE = '#d03b3b';     // расход
 const FONT = 'Roboto';
 const MONEY_FORMAT = '#,##0.##" ₸"';
 const COUNT_FORMAT = '0';
+
+function doPost(e) {
+  try {
+    if (!e || !e.postData || !e.postData.contents) {
+      return reply({ error: 'пустой запрос' });
+    }
+
+    const payload = JSON.parse(e.postData.contents);
+
+    if (payload.token !== TOKEN) {
+      // Не уточняем, что именно не так: адрес веб-приложения может утечь,
+      // и подсказывать проверяющему нечего.
+      return reply({ error: 'доступ запрещён' });
+    }
+
+    const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+    renderDaily(spreadsheet, payload);
+    renderOperations(spreadsheet, payload.operations);
+    orderSheets(spreadsheet);
+
+    return reply({
+      ok: true,
+      operations: (payload.operations.rows || []).length,
+      daily: (payload.daily.rows || []).length,
+    });
+  } catch (error) {
+    return reply({ error: String(error) });
+  }
+}
+
+function doGet() {
+  // Открытие адреса в браузере не должно выглядеть как поломка.
+  return reply({ ok: true, hint: 'Это приёмник данных BotArba. Нужен POST.' });
+}
+
+function reply(payload) {
+  return ContentService
+    .createTextOutput(JSON.stringify(payload))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+/** Сводка — первым листом: её открывают чаще, чем журнал операций. */
+function orderSheets(spreadsheet) {
+  const daily = spreadsheet.getSheetByName(DAILY_SHEET);
+  if (daily) {
+    spreadsheet.setActiveSheet(daily);
+    spreadsheet.moveActiveSheet(1);
+  }
+}
+
+/** Лист под запись: создать, очистить, снять оформление прошлой выгрузки. */
+function prepareSheet(spreadsheet, name, tabColor) {
+  let sheet = spreadsheet.getSheetByName(name);
+  if (!sheet) {
+    sheet = spreadsheet.insertSheet(name);
+  }
+
+  // Полосы и правила живут отдельно от содержимого: если их не снять,
+  // с каждой выгрузкой они будут накапливаться поверх друг друга.
+  sheet.getBandings().forEach(function (banding) { banding.remove(); });
+  sheet.setConditionalFormatRules([]);
+  const filter = sheet.getFilter();
+  if (filter) {
+    filter.remove();
+  }
+
+  sheet.clear();
+  sheet.setHiddenGridlines(true);
+  sheet.setTabColor(tabColor);
+  return sheet;
+}
