@@ -125,22 +125,32 @@ async def correct_start(
     )
 
 
-@router.message(Correction.waiting_amount, not_command)
-async def correction_amount(message: Message, state: FSMContext) -> None:
-    match = _SIGNED.match(message.text or "")
-    if match is None:
-        await message.answer(texts.BAD_AMOUNT.format(reason="пустой ввод"), parse_mode="HTML")
-        return
+def parse_signed_amount(raw: str) -> int | None:
+    """Разобрать «+50000», «-50000» или «50000».
 
+    Без знака считаем, что имели в виду плюс: человек, набирающий
+    «/correct 1050000», хочет добавить деньги, а не получить отказ.
+    """
+    match = _SIGNED.match(raw or "")
+    if match is None:
+        return None
     sign, rest = match.group(1), match.group(2)
     try:
         amount = tiyn_from_user(rest)
-    except AmountError as exc:
-        await message.answer(texts.BAD_AMOUNT.format(reason=exc), parse_mode="HTML")
-        return
+    except AmountError:
+        return None
+    return -amount if sign in ("-", "−") else amount
 
-    if sign in ("-", "−"):
-        amount = -amount
+
+@router.message(Correction.waiting_amount, not_command)
+async def correction_amount(message: Message, state: FSMContext) -> None:
+    amount = parse_signed_amount(message.text or "")
+    if amount is None:
+        await message.answer(
+            texts.BAD_AMOUNT.format(reason="нужно число, например +50000"),
+            parse_mode="HTML",
+        )
+        return
 
     await state.update_data(amount=amount)
     await state.set_state(Correction.waiting_comment)
