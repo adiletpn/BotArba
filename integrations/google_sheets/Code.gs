@@ -266,41 +266,62 @@ function renderOperations(spreadsheet, block) {
   sheet.getRange(2, 6, lastRow - 1, 1).setFontColor(INK);
   sheet.getRange(2, 8, lastRow - 1, 3).setFontColor(INK_MUTED).setFontSize(9);
 
+  drawBorders(sheet, 1, lastRow, width);
   sheet.getRange(1, 1, lastRow, width).createFilter();
 }
 
 const DAILY_WIDTHS = [110, 136, 136, 150, 136, 176, 90];
 
-/** Четыре показателя над таблицей: то, ради чего таблицу открывают. */
-function drawHeadline(sheet, summary, generatedAt) {
+/**
+ * Четыре показателя над таблицей: то, ради чего таблицу открывают.
+ *
+ * Каждая плитка занимает ДВЕ колонки: в одну подпись вида
+ * «ПОСТУПЛЕНИЯ СЕГОДНЯ» не влезает и обрезается многоточием.
+ */
+function drawHeadline(sheet, summary, generatedAt, width) {
   const tiles = [
-    { column: 1, span: 2, label: 'БАЛАНС СЕЙЧАС', value: summary.balance, money: true, hero: true },
-    { column: 3, span: 1, label: 'ПОСТУПЛЕНИЯ СЕГОДНЯ', value: summary.today_income, money: true },
-    { column: 4, span: 1, label: 'РАСХОДЫ СЕГОДНЯ', value: summary.today_expense, money: true },
-    { column: 5, span: 2, label: 'ОПЛАТ СЕГОДНЯ', value: summary.today_payments, money: false },
+    { column: 1, label: 'БАЛАНС СЕЙЧАС', value: summary.balance, money: true, hero: true },
+    { column: 3, label: 'ПОСТУПЛЕНИЯ СЕГОДНЯ', value: summary.today_income, money: true },
+    { column: 5, label: 'РАСХОДЫ СЕГОДНЯ', value: summary.today_expense, money: true },
+    { column: 7, label: 'ОПЛАТ', value: summary.today_payments, money: false },
   ];
 
+  // Плитки — карточка на сером фоне: так блок читается как шапка,
+  // а не как ещё одна строка данных.
+  sheet.getRange(1, 1, 2, width)
+    .setBackground(BAND)
+    .setBorder(true, true, true, true, null, null, '#c3c2b7',
+               SpreadsheetApp.BorderStyle.SOLID);
+
   tiles.forEach(function (tile) {
-    const label = sheet.getRange(1, tile.column, 1, tile.span);
-    const value = sheet.getRange(2, tile.column, 1, tile.span);
-    if (tile.span > 1) {
+    const span = Math.min(2, width - tile.column + 1);
+    const label = sheet.getRange(1, tile.column, 1, span);
+    const value = sheet.getRange(2, tile.column, 1, span);
+    if (span > 1) {
       label.merge();
       value.merge();
     }
 
     label.setValue(tile.label)
       .setFontFamily(FONT).setFontSize(9).setFontColor(INK_MUTED)
-      .setVerticalAlignment('bottom');
+      .setHorizontalAlignment('left').setVerticalAlignment('middle');
 
     value.setValue(tile.value)
       .setFontFamily(FONT)
-      .setFontSize(tile.hero ? 22 : 15)
+      .setFontSize(tile.hero ? 20 : 14)
       .setFontWeight('bold')
       .setFontColor(tile.value < 0 ? NEGATIVE : INK)
-      .setVerticalAlignment('middle');
+      .setHorizontalAlignment('left').setVerticalAlignment('middle');
 
     if (tile.money) {
       value.setNumberFormat(MONEY_FORMAT);
+    }
+
+    // Тонкая вертикаль между плитками вместо рамки вокруг каждой.
+    if (tile.column > 1) {
+      sheet.getRange(1, tile.column, 2, 1)
+        .setBorder(null, true, null, null, null, null, RULE,
+                   SpreadsheetApp.BorderStyle.SOLID);
     }
   });
 
@@ -308,16 +329,16 @@ function drawHeadline(sheet, summary, generatedAt) {
   // колонки, а не свойство конкретного числа.
   sheet.getRange(2, 3).setFontColor(summary.today_income > 0 ? POSITIVE : INK_MUTED);
 
-  sheet.getRange(1, 7).setValue('Обновлено')
+  // Отметка времени — отдельной строкой под карточкой. В узкой колонке
+  // справа она обрезалась до «0.10.2026 в 09:55».
+  sheet.getRange(3, 1, 1, Math.min(3, width)).merge()
+    .setValue('Обновлено ' + (generatedAt || ''))
     .setFontFamily(FONT).setFontSize(9).setFontColor(INK_MUTED)
-    .setHorizontalAlignment('right').setVerticalAlignment('bottom');
-  sheet.getRange(2, 7).setValue(generatedAt || '')
-    .setFontFamily(FONT).setFontSize(9).setFontColor(INK_SOFT)
-    .setHorizontalAlignment('right').setVerticalAlignment('middle');
+    .setHorizontalAlignment('left').setVerticalAlignment('middle');
 
-  sheet.setRowHeight(1, 22);
-  sheet.setRowHeight(2, 40);
-  sheet.setRowHeight(3, 14);   // воздух между показателями и таблицей
+  sheet.setRowHeight(1, 24);
+  sheet.setRowHeight(2, 42);
+  sheet.setRowHeight(3, 26);
 }
 
 function renderDaily(spreadsheet, payload) {
@@ -330,7 +351,7 @@ function renderDaily(spreadsheet, payload) {
   const rows = block.rows || [];
 
   if (payload.summary) {
-    drawHeadline(sheet, payload.summary, payload.generated_at);
+    drawHeadline(sheet, payload.summary, payload.generated_at, block.header.length);
   }
 
   const headerRow = payload.summary ? 4 : 1;
@@ -365,7 +386,9 @@ function renderDaily(spreadsheet, payload) {
   sheet.getRange(firstDataRow, 1, lastRow - headerRow, 1).setFontColor(INK);
   sheet.getRange(firstDataRow, 7, lastRow - headerRow, 1).setFontColor(INK_MUTED);
 
-  // Последняя строка — сегодняшний день: отбиваем линией сверху.
-  sheet.getRange(lastRow, 1, 1, block.header.length)
-    .setBorder(true, null, null, null, null, null, RULE, SpreadsheetApp.BorderStyle.SOLID);
+  drawBorders(sheet, headerRow, lastRow, block.header.length);
+
+  // Сегодняшний день — последняя строка: выделяем фоном, чтобы взгляд
+  // падал на неё сразу при открытии.
+  sheet.getRange(lastRow, 1, 1, block.header.length).setBackground('#f1f3f4');
 }
