@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import logging
+
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import BotCommand
+
+logger = logging.getLogger(__name__)
 
 from app.bot.handlers import (
     balance,
@@ -43,7 +47,23 @@ BOT_COMMANDS = (
 
 
 async def register_commands(bot: Bot) -> None:
+    """Выставить меню команд и описание бота.
+
+    Делается при каждом старте: так карточка бота всегда соответствует коду,
+    и при переносе на другой токен ничего не нужно донастраивать руками.
+    Ошибки здесь не критичны — бот работает и без описания.
+    """
+    from app.bot import texts
+
     await bot.set_my_commands(list(BOT_COMMANDS))
+    try:
+        await bot.set_my_name(name=texts.BOT_NAME)
+        await bot.set_my_description(description=texts.BOT_DESCRIPTION)
+        await bot.set_my_short_description(
+            short_description=texts.BOT_SHORT_DESCRIPTION
+        )
+    except Exception:
+        logger.warning("Не удалось обновить описание бота", exc_info=True)
 
 
 def create_dispatcher(repo, settings) -> Dispatcher:
