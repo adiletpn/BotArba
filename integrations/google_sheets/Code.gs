@@ -188,3 +188,54 @@ function moneySignRules(sheet, column, firstDataRow, lastRow) {
       .whenNumberLessThan(0).setFontColor(NEGATIVE).setRanges([range]).build(),
   ];
 }
+
+const OPERATIONS_WIDTHS = [56, 92, 64, 128, 116, 128, 260, 132, 150, 92];
+
+function renderOperations(spreadsheet, block) {
+  if (!block || !block.header) {
+    return;
+  }
+
+  const sheet = prepareSheet(spreadsheet, OPERATIONS_SHEET, INK_SOFT);
+  const rows = block.rows || [];
+  const lastRow = drawTable(sheet, block.header, rows, 1, { moneyColumns: [5] });
+
+  OPERATIONS_WIDTHS.forEach(function (width, index) {
+    if (index < block.header.length) {
+      sheet.setColumnWidth(index + 1, width);
+    }
+  });
+
+  if (rows.length === 0) {
+    return;
+  }
+
+  const width = block.header.length;
+  const rules = [];
+
+  // Отменённую операцию не прячем — её важно видеть, — но гасим целиком,
+  // чтобы она не читалась как действующая. Правило идёт первым: при
+  // совпадении нескольких правил выигрывает верхнее.
+  rules.push(
+    SpreadsheetApp.newConditionalFormatRule()
+      .whenFormulaSatisfied('=$J2="да"')
+      .setFontColor(INK_MUTED)
+      .setStrikethrough(true)
+      .setRanges([sheet.getRange(2, 1, lastRow - 1, width)])
+      .build()
+  );
+
+  moneySignRules(sheet, 5, 2, lastRow).forEach(function (rule) {
+    rules.push(rule);
+  });
+
+  sheet.setConditionalFormatRules(rules);
+
+  // Дата и время — узкие служебные колонки, им приглушённый тон;
+  // статья и комментарий несут смысл, их оставляем контрастнее.
+  sheet.getRange(2, 1, lastRow - 1, 3).setFontColor(INK_MUTED);
+  sheet.getRange(2, 6, lastRow - 1, 1).setFontColor(INK);
+  sheet.getRange(2, 8, lastRow - 1, 3).setFontColor(INK_MUTED).setFontSize(9);
+
+  sheet.getRange(1, 1, lastRow, width).createFilter();
+}
