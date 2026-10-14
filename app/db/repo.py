@@ -66,3 +66,105 @@ class Repo:
             "SELECT telegram_id FROM users ORDER BY telegram_id"
         ) as cursor:
             return [row["telegram_id"] for row in await cursor.fetchall()]
+
+    # ---------- запись операций ----------
+
+    async def add_operation(
+        self,
+        *,
+        type: OperationType,
+        amount: int,
+        category: str | None = None,
+        comment: str | None = None,
+        source: OperationSource = "manual",
+        external_id: str | None = None,
+        created_by: int | None = None,
+        occurred_at: datetime | None = None,
+    ) -> int | None:
+        """Записать операцию. Вернуть её id, либо None, если она уже есть.
+
+        None возвращается только при конфликте external_id — это нормальный
+        путь для повторного вебхука ApiPay, а не ошибка. Сумма приходит уже
+        со знаком: вызывающий знает, расход это или поступление.
+        """
+        moment = occurred_at or now_utc()
+        async with self._db.conn.execute(
+            """
+            INSERT INTO operations (
+                type, amount, category, comment, source, external_id,
+                created_by, occurred_at, created_at, local_date
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (external_id) DO NOTHING
+            RETURNING id
+            """,
+            (
+                type, amount, category, comment, source, external_id,
+                created_by, to_utc_text(moment), to_utc_text(now_utc()),
+                local_date_of(moment, self._tz),
+            ),
+        ) as cursor:
+            row = await cursor.fetchone()
+        await self._db.conn.commit()
+
+        if row is None:
+            logger.info("Операция с external_id=%s уже записана, пропуск", external_id)
+            return None
+        return int(row["id"])
+
+    async def get_operation(self, operation_id: int) -> Operation | None:
+        async with self._db.conn.execute(
+            "SELECT * FROM operations WHERE id = ?", (operation_id,)
+        ) as cursor:
+            row = await cursor.fetchone()
+        return Operation.from_row(row) if row else None
+
+    async def cancel_operation(self, operation_id: int) -> bool:
+        """Отменить операцию (кнопка «Отменить» под расходом).
+
+        Строка не удаляется и сумма не правится — ставится флаг, как требует
+        ТЗ: «старые записи не перезаписываются». Повторная отмена вернёт False.
+        """
+        async with self._db.conn.execute(
+            """
+            UPDATE operations SET is_cancelled = 1, cancelled_at = ?
+            WHERE id = ? AND is_cancelled = 0
+            """,
+            (to_utc_text(now_utc()), operation_id),
+        ) as cursor:
+            changed = cursor.rowcount
+        await self._db.conn.commit()
+        return changed > 0
+
+    async def has_start_balance(self) -> bool:
+        """Стартовая сумма задаётся один раз: повторно — только через /correct."""
+        async with self._db.conn.execute(
+            "SELECT 1 FROM operations WHERE type = 'start' AND is_cancelled = 0 LIMIT 1"
+        ) as cursor:
+            return await cursor.fetchone() is not None
+
+    async def set_start_balance(self, amount: int, created_by: int) -> int | None:
+        """Записать стартовый баланс, если его ещё нет.
+
+        Проверка и вставка идут одним запросом: иначе два быстрых /start
+        могли бы создать две стартовые операции.
+        """
+        async with self._db.conn.execute(
+            """
+            INSERT INTO operations (
+                type, amount, comment, source, created_by,
+                occurred_at, created_at, local_date
+            )
+            SELECT 'start', ?, 'Стартовый баланс', 'manual', ?, ?, ?, ?
+            WHERE NOT EXISTS (
+                SELECT 1 FROM operations WHERE type = 'start' AND is_cancelled = 0
+            )
+            RETURNING id
+            """,
+            (
+                amount, created_by, to_utc_text(now_utc()),
+                to_utc_text(now_utc()), local_date_of(now_utc(), self._tz),
+            ),
+        ) as cursor:
+            row = await cursor.fetchone()
+        await self._db.conn.commit()
+        return int(row["id"]) if row else None
