@@ -1,9 +1,22 @@
 """Критерии приёмки из ТЗ, прогнанные через настоящий HTTP-эндпоинт вебхука."""
 
 import json
+from datetime import timedelta
 
 from app.apipay.webhook import SIGNATURE_HEADER, compute_signature
+from app.clock import now_utc, to_utc_text
 from app.web.server import create_app
+
+
+def paid_now(payload: dict, *, minutes_ago: int = 0) -> dict:
+    """Проставить оплате свежее время.
+
+    Поступления ApiPay учитываются только с момента стартовой суммы, поэтому
+    в тестах оплата обязана быть ПОЗЖЕ неё — как и в бою.
+    """
+    moment = now_utc() - timedelta(minutes=minutes_ago)
+    invoice = {**payload["invoice"], "paid_at": to_utc_text(moment)}
+    return {**payload, "invoice": invoice}
 
 START_BALANCE = 100_000_000      # 1 000 000 ₸
 PAYMENT = 19_000_000             #   190 000 ₸
@@ -43,7 +56,7 @@ async def test_sandbox_payment_lands_in_the_balance(aiohttp_client, repo, settin
     await repo.set_start_balance(START_BALANCE, created_by=1)
     client = await aiohttp_client(create_app(repo, settings))
 
-    response = await _post_webhook(client, settings, PAID_WEBHOOK)
+    response = await _post_webhook(client, settings, paid_now(PAID_WEBHOOK))
     assert response.status == 200
     assert (await response.json())["outcome"] == "income_recorded"
 
@@ -56,7 +69,7 @@ async def test_replayed_webhook_does_not_double_the_balance(aiohttp_client, repo
     client = await aiohttp_client(create_app(repo, settings))
 
     for _ in range(3):
-        response = await _post_webhook(client, settings, PAID_WEBHOOK)
+        response = await _post_webhook(client, settings, paid_now(PAID_WEBHOOK))
         assert response.status == 200
 
     assert await repo.balance() == 119_000_000
@@ -85,7 +98,7 @@ async def test_forged_webhook_is_rejected_and_logged(aiohttp_client, repo, setti
 async def test_every_webhook_is_written_to_the_log(aiohttp_client, repo, settings):
     """ТЗ: все входящие вебхуки пишутся в лог, чтобы разобрать спорный случай."""
     client = await aiohttp_client(create_app(repo, settings))
-    await _post_webhook(client, settings, PAID_WEBHOOK)
+    await _post_webhook(client, settings, paid_now(PAID_WEBHOOK))
     await _post_webhook(client, settings, {"event": "subscription.created", "is_sandbox": True})
 
     async with repo._db.conn.execute("SELECT COUNT(*) AS cnt FROM webhook_logs") as cursor:
@@ -97,7 +110,7 @@ async def test_expense_and_undo_restore_the_balance(aiohttp_client, repo, settin
     """Расход 100 000 -> 1 090 000; «Отменить» -> 1 190 000."""
     await repo.set_start_balance(START_BALANCE, created_by=1)
     client = await aiohttp_client(create_app(repo, settings))
-    await _post_webhook(client, settings, PAID_WEBHOOK)
+    await _post_webhook(client, settings, paid_now(PAID_WEBHOOK))
     assert await repo.balance() == 119_000_000
 
     operation_id = await repo.add_operation(
@@ -112,13 +125,13 @@ async def test_expense_and_undo_restore_the_balance(aiohttp_client, repo, settin
 async def test_refund_reduces_the_day_income(aiohttp_client, repo, settings):
     await repo.set_start_balance(START_BALANCE, created_by=1)
     client = await aiohttp_client(create_app(repo, settings))
-    await _post_webhook(client, settings, PAID_WEBHOOK)
+    await _post_webhook(client, settings, paid_now(PAID_WEBHOOK))
 
     refund_event = {
         "event": "invoice.refunded",
         "is_sandbox": True,
         "refund": {"id": 9, "amount": "20000.00", "status": "completed",
-                   "created_at": "2026-10-13T10:00:00+00:00"},
+                   "created_at": to_utc_text(now_utc())},
         "invoice": {"id": 777, "amount": "190000.00", "total_refunded": "20000.00",
                     "is_fully_refunded": False, "status": "partially_refunded"},
     }
@@ -127,7 +140,8 @@ async def test_refund_reduces_the_day_income(aiohttp_client, repo, settings):
 
     assert await repo.balance() == 119_000_000 - 2_000_000
 
-    totals = await repo.day_totals("2026-10-13")
+    from app.clock import today_local
+    totals = await repo.day_totals(today_local(settings.timezone))
     # Возврат уменьшает поступления за день, а не добавляется в расходы
     assert totals["income"] == PAYMENT - 2_000_000
     assert totals["expense"] == 0

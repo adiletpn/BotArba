@@ -37,8 +37,15 @@ async def _handle_payload(repo, payload: dict, sandbox_mode: bool) -> str:
 
     check_sandbox_flag(payload, sandbox_mode=sandbox_mode)
 
+    # Та же граница, что и в сверке: оплата до стартовой суммы уже учтена в ней.
+    cutoff = await repo.start_balance_moment()
+    if cutoff is None:
+        raise IgnoredEvent("стартовая сумма ещё не задана")
+
     if name == "invoice.status_changed":
         invoice: PaidInvoice = extract_paid_invoice(payload)
+        if invoice.paid_at < cutoff:
+            raise IgnoredEvent("оплата прошла до стартовой суммы")
         operation_id = await repo.add_operation(
             type="income",
             amount=invoice.amount,
@@ -54,6 +61,10 @@ async def _handle_payload(repo, payload: dict, sandbox_mode: bool) -> str:
         return "income_recorded"
 
     refund = extract_refund(payload)
+    # Возврат сравниваем по СВОЕЙ дате, а не по дате счёта: деньги уходят
+    # сейчас, даже если счёт был оплачен до начала учёта.
+    if refund.created_at < cutoff:
+        raise IgnoredEvent("возврат прошёл до стартовой суммы")
     operation_id = await record_webhook_refund(repo, refund)
     if operation_id is None:
         return "duplicate"

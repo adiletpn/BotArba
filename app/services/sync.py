@@ -52,8 +52,22 @@ async def reconcile(
         logger.warning("Сверка с ApiPay не удалась: %s", exc)
         return SyncResult(ok=False, error=str(exc))
 
-    income_added = refunds_added = 0
+    # Граница учёта: всё, что оплачено ДО стартовой суммы, в неё уже входит.
+    cutoff = await repo.start_balance_moment()
+    if cutoff is None:
+        logger.info(
+            "Стартовая сумма не задана — поступления ApiPay пока не записываю "
+            "(иначе не от чего считать баланс). Счетов за окно: %s",
+            len(invoices),
+        )
+        await repo.mark_apipay_sync(now_utc())
+        return SyncResult(ok=True, invoices_seen=len(invoices))
+
+    income_added = refunds_added = skipped = 0
     for invoice in invoices:
+        if invoice.paid_at < cutoff:
+            skipped += 1
+            continue
         # Поступление пишем ГРОССОМ: возврат — отдельная операция, иначе
         # в истории исчез бы сам факт возврата.
         operation_id = await repo.add_operation(
@@ -71,6 +85,9 @@ async def reconcile(
         if invoice.refunded:
             if await _sync_refund_total(repo, invoice.invoice_id, invoice.refunded):
                 refunds_added += 1
+
+    if skipped:
+        logger.info("Пропущено %s оплат до стартовой суммы", skipped)
 
     await repo.mark_apipay_sync(now_utc())
     return SyncResult(
