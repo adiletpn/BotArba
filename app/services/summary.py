@@ -70,3 +70,49 @@ def _plural_payments(count: int) -> str:
     if count % 10 in (2, 3, 4) and count % 100 not in (12, 13, 14):
         return "оплаты"
     return "оплат"
+
+
+#: Ширина колонки с подписью, чтобы суммы выстроились в столбик.
+#: Работает только в монospace-блоке — рендер оборачивается в <pre>.
+_LABEL_WIDTH = 17
+
+
+def _row(label: str, value: str) -> str:
+    return f"{label:<{_LABEL_WIDTH}}{value}"
+
+
+def render_summary(summary: DaySummary, tz) -> str:
+    """Отрендерить сводку по образцу из ТЗ.
+
+    Возвращает ТЕКСТ БЕЗ HTML-обёртки: оборачивание в <pre> и экранирование —
+    задача отправителя, который знает parse_mode.
+    """
+    from app.clock import format_date_ru, format_time_local
+    from app.money import format_delta, format_tenge
+
+    lines = [f"📊 Сводка за {format_date_ru(summary.local_date)}", ""]
+    lines.append(_row("На начало дня:", format_tenge(summary.opening)))
+
+    income_line = format_delta(summary.income)
+    if summary.income_count:
+        income_line += f"  ({summary.income_count} {_plural_payments(summary.income_count)})"
+    lines.append(_row("Поступления:", income_line))
+
+    lines.append(_row("Расходы:", format_delta(summary.expenses)))
+    for name, amount in summary.expense_rows:
+        lines.append(f"  • {name} — {format_tenge(abs(amount))}")
+
+    if summary.corrections:
+        lines.append(_row("Корректировки:", format_delta(summary.corrections)))
+    if summary.refund_count:
+        lines.append(_row("Возвраты:", f"{summary.refund_count} шт. (учтены в поступлениях)"))
+
+    lines.append("")
+    lines.append(_row("Баланс сейчас:", format_tenge(summary.balance)))
+
+    if not summary.apipay_fresh:
+        when = format_time_local(summary.last_sync, tz) if summary.last_sync else "неизвестно"
+        lines.append("")
+        lines.append(f"⚠️ Данные ApiPay обновлены в {when}")
+
+    return "\n".join(lines)
