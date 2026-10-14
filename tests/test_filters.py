@@ -52,3 +52,29 @@ def test_button_labels_are_covered_by_their_words():
     assert says(*texts.SAY_BALANCE)(_message(texts.BTN_BALANCE))
     assert says(*texts.SAY_EXPENSE)(_message(texts.BTN_EXPENSE))
     assert says(*texts.SAY_HISTORY)(_message(texts.BTN_HISTORY))
+
+
+def test_commands_escape_dialog_steps():
+    """Баг из практики: /correct посреди ввода суммы получал «Не понял сумму»."""
+    from app.bot.filters import not_command
+
+    assert not_command(_message("100000")) is True
+    assert not_command(_message("Закуп")) is True
+
+    assert not_command(_message("/correct")) is False
+    assert not_command(_message("/correct 1050000")) is False
+    assert not_command(_message("  /start")) is False
+
+
+def test_signed_amount_parsing():
+    from app.bot.handlers.manual import parse_signed_amount
+
+    assert parse_signed_amount("+50000") == 5_000_000
+    assert parse_signed_amount("-50000") == -5_000_000
+    assert parse_signed_amount("−50000") == -5_000_000
+    # Без знака считаем, что имели в виду плюс
+    assert parse_signed_amount("1050000") == 105_000_000
+    assert parse_signed_amount("1 050 000 ₸") == 105_000_000
+
+    assert parse_signed_amount("") is None
+    assert parse_signed_amount("много") is None
