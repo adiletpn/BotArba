@@ -369,3 +369,23 @@ class Repo:
             ),
         )
         await self._db.conn.commit()
+
+    # ---------- возвраты по счёту ----------
+
+    async def refunded_total_for_invoice(self, invoice_id: int) -> int:
+        """Сколько уже записано возвратов по счёту (положительное число).
+
+        Возвраты помечаются external_id вида "refund:<invoice_id>:<...>",
+        поэтому сумма по счёту берётся префиксным поиском — он идёт по
+        UNIQUE-индексу external_id.
+        """
+        async with self._db.conn.execute(
+            """
+            SELECT COALESCE(SUM(amount), 0) AS total FROM operations
+            WHERE is_cancelled = 0 AND type = 'refund'
+              AND external_id LIKE ? || '%'
+            """,
+            (f"refund:{invoice_id}:",),
+        ) as cursor:
+            row = await cursor.fetchone()
+        return -int(row["total"])
