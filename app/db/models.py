@@ -13,6 +13,17 @@ from app.clock import parse_utc_text
 OperationType = Literal["start", "income", "expense", "correction", "refund"]
 OperationSource = Literal["apipay", "manual"]
 
+#: Человекочитаемые подписи типов операций. Живут здесь, а не в хендлере,
+#: потому что их показывают и «История» в боте, и выгрузка в Google Таблицы —
+#: расхождение подписей выглядело бы как расхождение данных.
+OPERATION_LABELS: dict[str, str] = {
+    "start": "Старт",
+    "income": "Поступление",
+    "expense": "Расход",
+    "correction": "Корректировка",
+    "refund": "Возврат",
+}
+
 
 @dataclass(frozen=True, slots=True)
 class Operation:

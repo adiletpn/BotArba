@@ -7,21 +7,12 @@ from aiogram.types import Message
 
 from app.bot import keyboards, texts
 from app.bot.render import as_pre
+from app.db.models import OPERATION_LABELS
 from app.money import format_delta
 
 router = Router(name="history")
 
 HISTORY_LIMIT = 10
-
-#: Как подписывать тип операции в истории.
-TYPE_LABELS = {
-    "start": "Старт",
-    "income": "Поступление",
-    "expense": "Расход",
-    "correction": "Корректировка",
-    "refund": "Возврат",
-}
-
 
 @router.message(F.text == texts.BTN_HISTORY)
 async def show_history(message: Message, repo, settings) -> None:
@@ -33,7 +24,7 @@ async def show_history(message: Message, repo, settings) -> None:
     lines = [texts.HISTORY_HEADER, ""]
     for operation in operations:
         when = operation.occurred_at.astimezone(settings.timezone).strftime("%d.%m %H:%M")
-        label = TYPE_LABELS.get(operation.type, operation.type)
+        label = OPERATION_LABELS.get(operation.type, operation.type)
         detail = operation.category or operation.comment or ""
         if operation.source == "apipay" and not detail:
             detail = "Kaspi / ApiPay"
