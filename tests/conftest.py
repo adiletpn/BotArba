@@ -55,6 +55,7 @@ async def settings(tmp_path):
         web_host="127.0.0.1",
         web_port=0,
         sync_window_days=2,
+        sync_every_minutes=60,
         undo_window_minutes=10,
         backup_dir=Path(tmp_path / "backups"),
         backup_keep_days=14,

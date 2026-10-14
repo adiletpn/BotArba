@@ -101,13 +101,17 @@ async def create_scheduler(bot, db, repo, settings) -> AsyncIOScheduler:
         name="Вечерняя сводка",
     )
 
-    # Сверка в :05, чтобы не совпадать с вечерней сводкой, которая синхронизируется сама.
+    # Частота сверки — главный рычаг скорости: вебхук ApiPay привязан к
+    # api-ключу и может указывать только на один адрес, поэтому если он уже
+    # занят другой системой, опрос остаётся единственным путём. Лимит ApiPay —
+    # 200 запросов в минуту на ключ, так что даже раз в минуту далеко от предела.
+    every = max(1, min(settings.sync_every_minutes, 60))
     scheduler.add_job(
         run_sync,
-        CronTrigger(minute=5),
+        CronTrigger(minute=f"*/{every}") if every < 60 else CronTrigger(minute=5),
         args=(repo, settings),
         id="hourly_sync",
-        name="Часовая сверка с ApiPay",
+        name=f"Сверка с ApiPay каждые {every} мин",
     )
 
     if settings.sheets_enabled:
@@ -128,8 +132,8 @@ async def create_scheduler(bot, db, repo, settings) -> AsyncIOScheduler:
     )
 
     logger.info(
-        "Планировщик: сводка в %02d:%02d (%s), сверка каждый час, бэкап в 03:30",
-        summary_hour, summary_minute, settings.timezone_name,
+        "Планировщик: сводка в %02d:%02d (%s), сверка каждые %s мин, бэкап в 03:30",
+        summary_hour, summary_minute, settings.timezone_name, every,
     )
     return scheduler
 

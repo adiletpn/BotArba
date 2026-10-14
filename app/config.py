@@ -106,6 +106,7 @@ class Settings:
     web_port: int
 
     sync_window_days: int
+    sync_every_minutes: int
     undo_window_minutes: int
 
     backup_dir: Path
@@ -166,6 +167,7 @@ def load_settings(env_file: str | os.PathLike[str] | None = ".env") -> Settings:
         # WEB_PORT остаётся для локального запуска и VPS.
         web_port=_positive_int("PORT", 0) or _positive_int("WEB_PORT", 8080),
         sync_window_days=_positive_int("SYNC_WINDOW_DAYS", 2),
+        sync_every_minutes=_positive_int("SYNC_EVERY_MINUTES", 60),
         undo_window_minutes=_positive_int("UNDO_WINDOW_MINUTES", 10),
         backup_dir=Path(_optional("BACKUP_DIR", "./backups") or "./backups"),
         backup_keep_days=_positive_int("BACKUP_KEEP_DAYS", 14),
