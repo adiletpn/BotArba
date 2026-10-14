@@ -5,6 +5,7 @@ from __future__ import annotations
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.types import BotCommand
 
 from app.bot.handlers import (
     balance,
@@ -20,6 +21,23 @@ from app.bot.middlewares import WhitelistMiddleware
 
 def create_bot(token: str) -> Bot:
     return Bot(token=token, default=DefaultBotProperties(parse_mode="HTML"))
+
+
+#: Меню команд в Telegram. Регистрируется при старте, чтобы не настраивать
+#: его руками в BotFather и не расходиться с тем, что реально реализовано.
+#: Баланс, Расход и История здесь не нужны — они на постоянной клавиатуре.
+BOT_COMMANDS = (
+    BotCommand(command="start", description="Запуск и стартовый баланс"),
+    BotCommand(command="income", description="Ручное поступление (наличные, перевод)"),
+    BotCommand(command="correct", description="Корректировка баланса"),
+    BotCommand(command="settings", description="Настройки и время сводки"),
+    BotCommand(command="settime", description="Сменить время сводки, напр. /settime 21:00"),
+    BotCommand(command="whoami", description="Показать мой Telegram ID"),
+)
+
+
+async def register_commands(bot: Bot) -> None:
+    await bot.set_my_commands(list(BOT_COMMANDS))
 
 
 def create_dispatcher(repo, settings) -> Dispatcher:

@@ -8,7 +8,7 @@ import sys
 
 from aiohttp import web
 
-from app.bot.factory import create_bot, create_dispatcher
+from app.bot.factory import create_bot, create_dispatcher, register_commands
 from app.config import ConfigError, Settings, load_settings
 from app.db.database import Database
 from app.db.repo import Repo
@@ -74,6 +74,7 @@ async def run(settings: Settings) -> None:
         # Накопленные за простой апдейты пропускаем: отвечать на расход,
         # введённый три дня назад, уже бессмысленно.
         await bot.delete_webhook(drop_pending_updates=True)
+        await register_commands(bot)
         await dispatcher.start_polling(bot, repo=repo, settings=settings)
     finally:
         logger.info("Останов: закрываю планировщик, сервер и базу")
