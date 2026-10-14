@@ -168,3 +168,96 @@ class Repo:
             row = await cursor.fetchone()
         await self._db.conn.commit()
         return int(row["id"]) if row else None
+
+    # ---------- агрегаты ----------
+
+    async def balance(self) -> int:
+        """Текущий баланс = Σ amount по неотменённым операциям."""
+        async with self._db.conn.execute(
+            "SELECT COALESCE(SUM(amount), 0) AS total FROM operations WHERE is_cancelled = 0"
+        ) as cursor:
+            row = await cursor.fetchone()
+        return int(row["total"])
+
+    async def balance_before(self, local_date: str) -> int:
+        """«Остаток на начало дня» — баланс на 00:00 указанного дня.
+
+        В первый день это стартовая сумма: операций раньше просто нет.
+        """
+        async with self._db.conn.execute(
+            """
+            SELECT COALESCE(SUM(amount), 0) AS total FROM operations
+            WHERE is_cancelled = 0 AND local_date < ?
+            """,
+            (local_date,),
+        ) as cursor:
+            row = await cursor.fetchone()
+        return int(row["total"])
+
+    async def day_totals(self, local_date: str) -> dict[str, int]:
+        """Поступления и расходы за день, по типам операций.
+
+        Возвраты ApiPay (тип refund) уменьшают поступления за день, а не
+        попадают в расходы: это отрицательная выручка, а не трата.
+        """
+        async with self._db.conn.execute(
+            """
+            SELECT type, COALESCE(SUM(amount), 0) AS total, COUNT(*) AS cnt
+            FROM operations
+            WHERE is_cancelled = 0 AND local_date = ?
+            GROUP BY type
+            """,
+            (local_date,),
+        ) as cursor:
+            rows = await cursor.fetchall()
+
+        totals = {row["type"]: int(row["total"]) for row in rows}
+        counts = {row["type"]: int(row["cnt"]) for row in rows}
+        return {
+            "income": totals.get("income", 0) + totals.get("refund", 0),
+            "income_count": counts.get("income", 0),
+            "refund_count": counts.get("refund", 0),
+            "expense": totals.get("expense", 0),
+            "correction": totals.get("correction", 0),
+            "start": totals.get("start", 0),
+        }
+
+    async def day_expenses_by_category(self, local_date: str) -> list[tuple[str, int]]:
+        """Разбивка расходов дня по статьям — строки «• Закуп — 80 000 ₸»."""
+        async with self._db.conn.execute(
+            """
+            SELECT COALESCE(NULLIF(category, ''), 'Прочее') AS name,
+                   SUM(amount) AS total
+            FROM operations
+            WHERE is_cancelled = 0 AND local_date = ? AND type = 'expense'
+            GROUP BY name
+            ORDER BY total ASC
+            """,
+            (local_date,),
+        ) as cursor:
+            rows = await cursor.fetchall()
+        return [(row["name"], int(row["total"])) for row in rows]
+
+    async def recent_operations(self, limit: int = 10) -> list[Operation]:
+        """Последние операции для кнопки «История».
+
+        Отменённые показываем тоже — пользователю важно видеть, что отмена
+        случилась, иначе операция просто исчезает без следа.
+        """
+        async with self._db.conn.execute(
+            "SELECT * FROM operations ORDER BY occurred_at DESC, id DESC LIMIT ?",
+            (limit,),
+        ) as cursor:
+            rows = await cursor.fetchall()
+        return [Operation.from_row(row) for row in rows]
+
+    async def count_apipay_operations(self, local_date: str) -> int:
+        async with self._db.conn.execute(
+            """
+            SELECT COUNT(*) AS cnt FROM operations
+            WHERE is_cancelled = 0 AND local_date = ? AND source = 'apipay'
+            """,
+            (local_date,),
+        ) as cursor:
+            row = await cursor.fetchone()
+        return int(row["cnt"])
