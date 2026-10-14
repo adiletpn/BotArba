@@ -88,3 +88,23 @@ async def test_rescheduling_moves_the_live_job(repo, settings):
 
     fields = _fields(scheduler, "evening_summary")
     assert (fields["hour"], fields["minute"]) == ("7", "15")
+
+
+async def test_sync_interval_is_configurable(repo, settings):
+    """Когда вебхук недоступен, частота опроса — единственный рычаг скорости."""
+    from dataclasses import replace
+
+    scheduler = await create_scheduler(
+        bot=None, db=None, repo=repo, settings=replace(settings, sync_every_minutes=5)
+    )
+    assert _fields(scheduler, "hourly_sync")["minute"] == "*/5"
+
+
+async def test_sync_interval_is_clamped_to_an_hour(repo, settings):
+    from dataclasses import replace
+
+    scheduler = await create_scheduler(
+        bot=None, db=None, repo=repo, settings=replace(settings, sync_every_minutes=999)
+    )
+    # Больше часа крон по минутам не выражает — откатываемся к разу в час
+    assert _fields(scheduler, "hourly_sync")["minute"] == "5"
