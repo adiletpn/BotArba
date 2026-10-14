@@ -335,7 +335,41 @@ class Repo:
         )
         await self._db.conn.commit()
 
+    SUMMARY_TIME_KEY = "summary_time"
+    TIMEZONE_KEY = "timezone"
     LAST_SYNC_KEY = "last_apipay_sync"
+
+    async def seed_settings(self, summary_time: str, timezone_name: str) -> None:
+        """Записать настройки при первом запуске.
+
+        .env задаёт только НАЧАЛЬНОЕ значение. Дальше источник истины — база:
+        ТЗ требует, чтобы время сводки менялось в настройках, а не редеплоем.
+        """
+        if await self.get_setting(self.SUMMARY_TIME_KEY) is None:
+            await self.set_setting(self.SUMMARY_TIME_KEY, summary_time)
+        # Зона в базе — справочная: расписания строит APScheduler по TIMEZONE
+        # из окружения, потому что сменить её на лету нельзя без пересборки
+        # всех триггеров.
+        await self.set_setting(self.TIMEZONE_KEY, timezone_name)
+
+    async def get_summary_time(self, default: tuple[int, int]) -> tuple[int, int]:
+        """Время вечерней сводки из настроек, иначе значение по умолчанию."""
+        raw = await self.get_setting(self.SUMMARY_TIME_KEY)
+        if not raw:
+            return default
+        try:
+            hour_str, minute_str = raw.split(":", 1)
+            hour, minute = int(hour_str), int(minute_str)
+        except ValueError:
+            logger.warning("Некорректное %s в настройках: %r", self.SUMMARY_TIME_KEY, raw)
+            return default
+        if not (0 <= hour <= 23 and 0 <= minute <= 59):
+            logger.warning("%s вне диапазона: %r", self.SUMMARY_TIME_KEY, raw)
+            return default
+        return hour, minute
+
+    async def set_summary_time(self, hour: int, minute: int) -> None:
+        await self.set_setting(self.SUMMARY_TIME_KEY, f"{hour:02d}:{minute:02d}")
 
     async def get_last_apipay_sync(self) -> datetime | None:
         """Когда последний раз успешно сверились с ApiPay.
