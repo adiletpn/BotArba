@@ -111,3 +111,31 @@ class ApiPayClient:
             if len(rows) < MAX_PER_PAGE or page * MAX_PER_PAGE >= total:
                 return invoices
             page += 1
+
+    async def is_healthy(self) -> bool:
+        """GET /status — без авторизации, просто «API жив»."""
+        try:
+            await self._get("/status")
+            return True
+        except ApiPayError as exc:
+            logger.warning("ApiPay недоступен: %s", exc)
+            return False
+
+    async def simulate_payment(self, invoice_id: int) -> dict:
+        """Отметить sandbox-счёт оплаченным — для приёмки по ТЗ.
+
+        Работает только в песочнице: в рабочем режиме ApiPay откажет. Порождает
+        настоящий вебхук invoice.status_changed, так что путь проверяется целиком.
+        """
+        url = f"{self._base_url}/invoices/{invoice_id}/simulate-status"
+        session = self._ensure_session()
+        try:
+            async with session.post(
+                url, json={"status": "paid"}, headers={"X-API-Key": self._api_key}
+            ) as response:
+                body = await response.json(content_type=None)
+                if response.status >= 400:
+                    raise ApiPayError(f"simulate-status -> HTTP {response.status}: {body}")
+                return body or {}
+        except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
+            raise ApiPayError(f"simulate-status недоступен: {exc}") from exc
