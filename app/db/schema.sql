@@ -63,3 +63,37 @@ CREATE INDEX IF NOT EXISTS idx_operations_local_date
 -- «История»: последние 10 операций.
 CREATE INDEX IF NOT EXISTS idx_operations_occurred_at
     ON operations (occurred_at DESC);
+
+-- Статьи расходов. Пополняемый список: пользователь может ввести свою статью
+-- текстом, и она сохранится здесь для будущих кнопок.
+CREATE TABLE IF NOT EXISTS categories (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    name      TEXT    NOT NULL UNIQUE,
+    is_active INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0, 1)),
+    sort      INTEGER NOT NULL DEFAULT 100
+);
+
+-- Настройки и служебные метки (время сводки, зона, last_apipay_sync).
+-- Key-value, чтобы добавление настройки не требовало миграции схемы.
+CREATE TABLE IF NOT EXISTS settings (
+    key        TEXT PRIMARY KEY,
+    value      TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+-- Журнал вебхуков: ТЗ требует логировать все входящие, чтобы можно было
+-- разобрать спорный случай. Пишем и отвергнутые (плохая подпись) тоже.
+CREATE TABLE IF NOT EXISTS webhook_logs (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    received_at  TEXT    NOT NULL,
+    event        TEXT,
+    invoice_id   TEXT,
+    signature_ok INTEGER,
+    is_sandbox   INTEGER,
+    status_code  INTEGER NOT NULL,
+    outcome      TEXT    NOT NULL,
+    body         TEXT    NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_webhook_logs_received_at
+    ON webhook_logs (received_at DESC);
