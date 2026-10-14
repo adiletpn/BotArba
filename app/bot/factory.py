@@ -56,14 +56,47 @@ async def register_commands(bot: Bot) -> None:
     from app.bot import texts
 
     await bot.set_my_commands(list(BOT_COMMANDS))
+
+    # Имя и описание переписываем ТОЛЬКО если они изменились. Telegram жёстко
+    # лимитирует setMyName — примерно раз в сутки, — а деплой на каждый коммит
+    # вызывал бы его по десять раз подряд и упирался во Flood control.
+    await _sync_profile_field(
+        "имя",
+        lambda: bot.get_my_name(),
+        lambda current: current.name,
+        texts.BOT_NAME,
+        lambda value: bot.set_my_name(name=value),
+    )
+    await _sync_profile_field(
+        "описание",
+        lambda: bot.get_my_description(),
+        lambda current: current.description,
+        texts.BOT_DESCRIPTION,
+        lambda value: bot.set_my_description(description=value),
+    )
+    await _sync_profile_field(
+        "краткое описание",
+        lambda: bot.get_my_short_description(),
+        lambda current: current.short_description,
+        texts.BOT_SHORT_DESCRIPTION,
+        lambda value: bot.set_my_short_description(short_description=value),
+    )
+
+
+async def _sync_profile_field(label, read, extract, wanted, write) -> None:
+    """Обновить одно поле профиля, если оно расходится с кодом.
+
+    Ошибки не фатальны: бот прекрасно работает со старым описанием, а
+    падать из-за косметики на старте он не должен.
+    """
     try:
-        await bot.set_my_name(name=texts.BOT_NAME)
-        await bot.set_my_description(description=texts.BOT_DESCRIPTION)
-        await bot.set_my_short_description(
-            short_description=texts.BOT_SHORT_DESCRIPTION
-        )
-    except Exception:
-        logger.warning("Не удалось обновить описание бота", exc_info=True)
+        current = extract(await read())
+        if current == wanted:
+            return
+        await write(wanted)
+        logger.info("Профиль бота: %s обновлено", label)
+    except Exception as exc:
+        logger.warning("Профиль бота: %s не обновлено (%s)", label, exc)
 
 
 def create_dispatcher(repo, settings) -> Dispatcher:
