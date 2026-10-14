@@ -29,18 +29,29 @@ def main_keyboard() -> ReplyKeyboardMarkup:
     )
 
 
-def categories_keyboard(names: list[str]) -> ReplyKeyboardMarkup:
+def categories_keyboard(names: list[str]) -> InlineKeyboardMarkup:
     """Статьи расхода по две в ряд + «Отмена».
+
+    Кнопки именно inline, а не reply: постоянная клавиатура из трёх кнопок
+    при этом не подменяется, и подтверждение расхода может прийти ОДНИМ
+    сообщением вместе с кнопкой «Отменить» — как в образце ТЗ. С reply-клавиатурой
+    пришлось бы разбивать его на два сообщения.
+
+    В callback_data идёт ИНДЕКС, а не название: лимит callback_data — 64 байта,
+    а статью пользователь может назвать как угодно длинно.
 
     Список приходит из базы, а не из константы: статью, введённую текстом,
     бот запоминает, и в следующий раз она уже кнопка.
     """
     rows = [
-        [KeyboardButton(text=name) for name in names[index:index + 2]]
+        [
+            InlineKeyboardButton(text=name, callback_data=f"cat:{index + offset}")
+            for offset, name in enumerate(names[index:index + 2])
+        ]
         for index in range(0, len(names), 2)
     ]
-    rows.append([KeyboardButton(text=texts.BTN_CANCEL_INPUT)])
-    return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True, one_time_keyboard=True)
+    rows.append([InlineKeyboardButton(text=texts.BTN_CANCEL_INPUT, callback_data="cat:cancel")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def cancel_keyboard() -> ReplyKeyboardMarkup:
