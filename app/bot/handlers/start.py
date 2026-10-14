@@ -10,6 +10,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 from app.bot import keyboards, texts
+from app.bot.filters import not_command
 from app.bot.states import StartBalance
 from app.clock import format_date_ru, today_local
 from app.money import AmountError, format_tenge, tiyn_from_user
@@ -35,7 +36,7 @@ async def cmd_start(message: Message, state: FSMContext, repo, settings) -> None
     await message.answer(texts.ASK_START_BALANCE, parse_mode="HTML")
 
 
-@router.message(StartBalance.waiting_amount)
+@router.message(StartBalance.waiting_amount, not_command)
 async def start_balance_amount(message: Message, state: FSMContext) -> None:
     try:
         amount = tiyn_from_user(message.text or "")

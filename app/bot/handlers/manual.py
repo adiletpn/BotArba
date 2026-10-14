@@ -15,7 +15,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
 
 from app.bot import keyboards, texts
-from app.bot.filters import says
+from app.bot.filters import not_command, says
 from app.bot.states import Correction, ManualIncome
 from app.money import AmountError, format_tenge, tiyn_from_user
 
@@ -32,7 +32,7 @@ async def income_start(message: Message, state: FSMContext) -> None:
     await message.answer(texts.ASK_INCOME_AMOUNT, reply_markup=keyboards.cancel_keyboard())
 
 
-@router.message(ManualIncome.waiting_amount)
+@router.message(ManualIncome.waiting_amount, not_command)
 async def income_amount(message: Message, state: FSMContext) -> None:
     try:
         amount = tiyn_from_user(message.text or "")
@@ -47,7 +47,7 @@ async def income_amount(message: Message, state: FSMContext) -> None:
     )
 
 
-@router.message(ManualIncome.waiting_comment)
+@router.message(ManualIncome.waiting_comment, not_command)
 async def income_comment(message: Message, state: FSMContext, repo, user_id: int) -> None:
     comment = (message.text or "").strip()
     if comment.lower() in SKIP_COMMENT:
@@ -90,7 +90,7 @@ async def correct_start(message: Message, state: FSMContext) -> None:
     )
 
 
-@router.message(Correction.waiting_amount)
+@router.message(Correction.waiting_amount, not_command)
 async def correction_amount(message: Message, state: FSMContext) -> None:
     match = _SIGNED.match(message.text or "")
     if match is None:
@@ -114,7 +114,7 @@ async def correction_amount(message: Message, state: FSMContext) -> None:
     )
 
 
-@router.message(Correction.waiting_comment)
+@router.message(Correction.waiting_comment, not_command)
 async def correction_comment(message: Message, state: FSMContext, repo, user_id: int) -> None:
     comment = (message.text or "").strip()
     data = await state.get_data()

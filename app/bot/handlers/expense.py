@@ -15,7 +15,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 from app.bot import keyboards, texts
-from app.bot.filters import says
+from app.bot.filters import not_command, says
 from app.bot.states import Expense
 from app.money import AmountError, format_tenge, tiyn_from_user
 
@@ -38,7 +38,7 @@ async def expense_start(message: Message, state: FSMContext) -> None:
     await message.answer(texts.ASK_EXPENSE_AMOUNT, parse_mode="HTML")
 
 
-@router.message(Expense.waiting_amount)
+@router.message(Expense.waiting_amount, not_command)
 async def expense_amount(message: Message, state: FSMContext, repo) -> None:
     try:
         amount = tiyn_from_user(message.text or "")
@@ -132,7 +132,7 @@ async def expense_category_button(
     await callback.answer()
 
 
-@router.message(Expense.waiting_category, F.text)
+@router.message(Expense.waiting_category, F.text, not_command)
 async def expense_category_text(
     message: Message, state: FSMContext, repo, settings, user_id: int
 ) -> None:
