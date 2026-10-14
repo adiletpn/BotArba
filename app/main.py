@@ -13,6 +13,7 @@ from app.config import ConfigError, Settings, load_settings
 from app.db.database import Database
 from app.db.repo import Repo
 from app.scheduler import create_scheduler
+from app.services.sheets import SheetsSyncer
 from app.web.server import create_app
 
 logger = logging.getLogger(__name__)
@@ -65,6 +66,13 @@ async def run(settings: Settings) -> None:
             "работает только ручной учёт (/income, /correct, расходы)."
         )
 
+    # Выгрузка в Google Таблицы: хендлеры только поднимают флаг, отправляет
+    # отдельная задача — чтобы ответ на «Расход» не ждал ответа от Google.
+    syncer = SheetsSyncer(repo, settings)
+    repo.set_change_listener(syncer.request)
+    syncer.start()
+    syncer.request()   # первая выгрузка при старте, чтобы таблица догнала базу
+
     scheduler = await create_scheduler(bot, db, repo, settings)
     scheduler.start()
     # Хендлер /settime переносит задание на лету — для этого ему нужен сам планировщик.
@@ -79,6 +87,8 @@ async def run(settings: Settings) -> None:
     finally:
         logger.info("Останов: закрываю планировщик, сервер и базу")
         scheduler.shutdown(wait=False)
+        repo.set_change_listener(None)
+        await syncer.stop()
         await runner.cleanup()
         await bot.session.close()
         await db.close()

@@ -52,6 +52,19 @@ async def send_evening_summary(bot, repo, settings) -> None:
     logger.info("Вечерняя сводка отправлена")
 
 
+async def run_sheets_sync(repo, settings) -> None:
+    """Периодическая выгрузка в таблицу — страховка на случай, когда
+    фоновая задача не смогла отправить снимок (Google был недоступен)."""
+    from app.services.sheets import sync
+
+    if not settings.sheets_enabled:
+        return
+    try:
+        await sync(repo, settings)
+    except Exception:
+        logger.exception("Плановая выгрузка в Google Таблицы сорвалась")
+
+
 async def run_backup(db, settings) -> None:
     try:
         await make_backup(db, settings.backup_dir, settings.backup_keep_days)
@@ -96,6 +109,15 @@ async def create_scheduler(bot, db, repo, settings) -> AsyncIOScheduler:
         id="hourly_sync",
         name="Часовая сверка с ApiPay",
     )
+
+    if settings.sheets_enabled:
+        scheduler.add_job(
+            run_sheets_sync,
+            CronTrigger(minute=f"*/{settings.sheets_sync_minutes}"),
+            args=(repo, settings),
+            id="sheets_sync",
+            name="Выгрузка в Google Таблицы",
+        )
 
     scheduler.add_job(
         run_backup,
