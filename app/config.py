@@ -83,3 +83,79 @@ def _summary_time(raw: str) -> tuple[int, int]:
     if not (0 <= hour <= 23 and 0 <= minute <= 59):
         raise ConfigError(f"SUMMARY_TIME вне диапазона: {raw!r}")
     return hour, minute
+
+
+@dataclass(frozen=True, slots=True)
+class Settings:
+    bot_token: str
+    owner_ids: tuple[int, ...]
+
+    apipay_api_key: str
+    apipay_webhook_secret: str
+    apipay_base_url: str
+    apipay_sandbox: bool
+    apipay_webhook_path: str
+
+    db_path: Path
+    timezone: ZoneInfo
+    timezone_name: str
+    summary_hour: int
+    summary_minute: int
+
+    web_host: str
+    web_port: int
+
+    sync_window_days: int
+    undo_window_minutes: int
+
+    backup_dir: Path
+    backup_keep_days: int
+
+    @property
+    def webhook_route(self) -> str:
+        return f"/webhook/{self.apipay_webhook_path}"
+
+    @property
+    def apipay_enabled(self) -> bool:
+        """Без ключа бот работает как чисто ручной учёт: /income, /correct, расходы."""
+        return bool(self.apipay_api_key)
+
+
+def load_settings(env_file: str | os.PathLike[str] | None = ".env") -> Settings:
+    """Собрать настройки из окружения.
+
+    .env не перезаписывает уже выставленные переменные: на Railway переменные
+    сервиса должны побеждать случайно закоммиченный файл.
+    """
+    if env_file and Path(env_file).exists():
+        load_dotenv(env_file, override=False)
+
+    timezone_name = _optional("TIMEZONE", "Asia/Almaty") or "Asia/Almaty"
+    try:
+        timezone = ZoneInfo(timezone_name)
+    except ZoneInfoNotFoundError as exc:
+        raise ConfigError(f"Неизвестный часовой пояс TIMEZONE={timezone_name!r}") from exc
+
+    summary_hour, summary_minute = _summary_time(_optional("SUMMARY_TIME", "21:00") or "21:00")
+
+    return Settings(
+        bot_token=_require("BOT_TOKEN"),
+        owner_ids=_owner_ids(_require("OWNER_TELEGRAM_IDS")),
+        apipay_api_key=_optional("APIPAY_API_KEY"),
+        apipay_webhook_secret=_optional("APIPAY_WEBHOOK_SECRET"),
+        apipay_base_url=(_optional("APIPAY_BASE_URL", "https://api.apipay.kz/api/v1")
+                         or "https://api.apipay.kz/api/v1").rstrip("/"),
+        apipay_sandbox=_flag("APIPAY_SANDBOX", False),
+        apipay_webhook_path=_optional("APIPAY_WEBHOOK_PATH", "apipay") or "apipay",
+        db_path=Path(_optional("DB_PATH", "./data/botarba.db") or "./data/botarba.db"),
+        timezone=timezone,
+        timezone_name=timezone_name,
+        summary_hour=summary_hour,
+        summary_minute=summary_minute,
+        web_host=_optional("WEB_HOST", "0.0.0.0") or "0.0.0.0",
+        web_port=_positive_int("WEB_PORT", 8080),
+        sync_window_days=_positive_int("SYNC_WINDOW_DAYS", 2),
+        undo_window_minutes=_positive_int("UNDO_WINDOW_MINUTES", 10),
+        backup_dir=Path(_optional("BACKUP_DIR", "./backups") or "./backups"),
+        backup_keep_days=_positive_int("BACKUP_KEEP_DAYS", 14),
+    )
