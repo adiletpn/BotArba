@@ -21,7 +21,7 @@ import logging
 
 import aiohttp
 
-from app.clock import now_utc
+from app.clock import format_date_ru, now_utc
 from app.db.models import OPERATION_LABELS
 from app.money import TIYN_PER_TENGE
 
@@ -82,7 +82,8 @@ async def build_snapshot(repo, tz) -> dict:
         )
         running += day_total
         daily_rows.append([
-            row["local_date"],
+            # Тот же формат даты, что в листе операций: человек читает оба листа.
+            format_date_ru(str(row["local_date"])),
             _tenge(int(row["income"])),
             _tenge(int(row["expense"])),
             _tenge(int(row["correction"])),
