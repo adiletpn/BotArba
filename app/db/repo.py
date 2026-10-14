@@ -261,3 +261,111 @@ class Repo:
         ) as cursor:
             row = await cursor.fetchone()
         return int(row["cnt"])
+
+    # ---------- категории ----------
+
+    #: Статьи расходов из ТЗ. Порядок — порядок кнопок.
+    DEFAULT_CATEGORIES = ("Закуп", "Аренда", "Зарплата", "Реклама", "Налоги", "Прочее")
+
+    async def seed_categories(self) -> None:
+        for sort, name in enumerate(self.DEFAULT_CATEGORIES, start=1):
+            await self._db.conn.execute(
+                """
+                INSERT INTO categories (name, is_active, sort) VALUES (?, 1, ?)
+                ON CONFLICT (name) DO NOTHING
+                """,
+                (name, sort),
+            )
+        await self._db.conn.commit()
+
+    async def active_categories(self) -> list[str]:
+        async with self._db.conn.execute(
+            "SELECT name FROM categories WHERE is_active = 1 ORDER BY sort, name"
+        ) as cursor:
+            return [row["name"] for row in await cursor.fetchall()]
+
+    async def add_category(self, name: str) -> None:
+        """Запомнить статью, введённую текстом, чтобы она появилась в кнопках."""
+        cleaned = name.strip()
+        if not cleaned:
+            return
+        await self._db.conn.execute(
+            """
+            INSERT INTO categories (name, is_active, sort) VALUES (?, 1, 500)
+            ON CONFLICT (name) DO UPDATE SET is_active = 1
+            """,
+            (cleaned,),
+        )
+        await self._db.conn.commit()
+
+    # ---------- настройки ----------
+
+    async def get_setting(self, key: str) -> str | None:
+        async with self._db.conn.execute(
+            "SELECT value FROM settings WHERE key = ?", (key,)
+        ) as cursor:
+            row = await cursor.fetchone()
+        return row["value"] if row else None
+
+    async def set_setting(self, key: str, value: str) -> None:
+        await self._db.conn.execute(
+            """
+            INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+            ON CONFLICT (key) DO UPDATE SET value = excluded.value,
+                                           updated_at = excluded.updated_at
+            """,
+            (key, value, to_utc_text(now_utc())),
+        )
+        await self._db.conn.commit()
+
+    LAST_SYNC_KEY = "last_apipay_sync"
+
+    async def get_last_apipay_sync(self) -> datetime | None:
+        """Когда последний раз успешно сверились с ApiPay.
+
+        Нужно для пометки «Данные ApiPay обновлены в 18:40», которую ТЗ требует
+        показывать, если ApiPay недоступен в момент формирования сводки.
+        """
+        raw = await self.get_setting(self.LAST_SYNC_KEY)
+        if not raw:
+            return None
+        from app.clock import parse_utc_text
+
+        return parse_utc_text(raw)
+
+    async def mark_apipay_sync(self, moment: datetime | None = None) -> None:
+        await self.set_setting(self.LAST_SYNC_KEY, to_utc_text(moment or now_utc()))
+
+    # ---------- журнал вебхуков ----------
+
+    async def log_webhook(
+        self,
+        *,
+        body: str,
+        status_code: int,
+        outcome: str,
+        event: str | None = None,
+        invoice_id: str | None = None,
+        signature_ok: bool | None = None,
+        is_sandbox: bool | None = None,
+    ) -> None:
+        """Записать входящий вебхук. ТЗ: логируем ВСЕ, включая отвергнутые.
+
+        Тело режем до 8 КБ: спорный случай разбирается по полям события, а
+        раздувать базу полным дампом корзины товаров смысла нет.
+        """
+        await self._db.conn.execute(
+            """
+            INSERT INTO webhook_logs (
+                received_at, event, invoice_id, signature_ok,
+                is_sandbox, status_code, outcome, body
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                to_utc_text(now_utc()), event, invoice_id,
+                None if signature_ok is None else int(signature_ok),
+                None if is_sandbox is None else int(is_sandbox),
+                status_code, outcome, body[:8192],
+            ),
+        )
+        await self._db.conn.commit()
