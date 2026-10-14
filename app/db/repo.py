@@ -31,25 +31,42 @@ class Repo:
     async def ensure_owners(self, owner_ids: tuple[int, ...]) -> None:
         """Синхронизировать белый список из .env в таблицу users.
 
-        .env — источник истины для доступа: добавить владельца = изменить
-        переменную и перезапустить. Существующие строки не трогаем, чтобы
-        не терять имя и дату появления.
+        .env — источник истины для доступа, причём в ОБЕ стороны: кого нет в
+        переменной, тот доступ теряет. Иначе смена владельца не отзывала бы
+        доступ у прежнего, и вечерняя сводка продолжала бы уходить ему.
+
+        Строки не удаляются: на users ссылается operations.created_by, и
+        удаление снесло бы историю операций по внешнему ключу. Вместо этого
+        снимается is_active — имя и дата появления сохраняются.
         """
         now = to_utc_text(now_utc())
         for telegram_id in owner_ids:
             await self._db.conn.execute(
                 """
-                INSERT INTO users (telegram_id, name, role, created_at)
-                VALUES (?, '', 'owner', ?)
-                ON CONFLICT (telegram_id) DO UPDATE SET role = 'owner'
+                INSERT INTO users (telegram_id, name, role, created_at, is_active)
+                VALUES (?, '', 'owner', ?, 1)
+                ON CONFLICT (telegram_id)
+                    DO UPDATE SET role = 'owner', is_active = 1
                 """,
                 (telegram_id, now),
             )
+
+        placeholders = ",".join("?" * len(owner_ids))
+        revoked = await self._db.conn.execute(
+            f"""
+            UPDATE users SET is_active = 0
+            WHERE is_active = 1 AND telegram_id NOT IN ({placeholders})
+            """,
+            owner_ids,
+        )
+        if revoked.rowcount:
+            logger.info("Доступ отозван у %s пользователей", revoked.rowcount)
         await self._db.conn.commit()
 
     async def is_allowed(self, telegram_id: int) -> bool:
         async with self._db.conn.execute(
-            "SELECT 1 FROM users WHERE telegram_id = ?", (telegram_id,)
+            "SELECT 1 FROM users WHERE telegram_id = ? AND is_active = 1",
+            (telegram_id,),
         ) as cursor:
             return await cursor.fetchone() is not None
 
@@ -63,7 +80,7 @@ class Repo:
     async def owner_ids(self) -> list[int]:
         """Кому рассылать вечернюю сводку."""
         async with self._db.conn.execute(
-            "SELECT telegram_id FROM users ORDER BY telegram_id"
+            "SELECT telegram_id FROM users WHERE is_active = 1 ORDER BY telegram_id"
         ) as cursor:
             return [row["telegram_id"] for row in await cursor.fetchall()]
 

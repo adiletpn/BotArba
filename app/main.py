@@ -33,6 +33,7 @@ async def prepare_database(settings: Settings) -> tuple[Database, Repo]:
     db = Database(settings.db_path)
     await db.connect()
     await db.init_schema()
+    await db.migrate()
 
     repo = Repo(db, settings.timezone)
     await repo.seed_categories()

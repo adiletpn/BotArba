@@ -11,7 +11,11 @@ CREATE TABLE IF NOT EXISTS users (
     name        TEXT    NOT NULL DEFAULT '',
     role        TEXT    NOT NULL DEFAULT 'owner'
                 CHECK (role IN ('owner', 'viewer')),
-    created_at  TEXT    NOT NULL
+    created_at  TEXT    NOT NULL,
+
+    -- Доступ отзывается флагом, а не удалением строки: на users ссылается
+    -- operations.created_by, и удаление владельца снесло бы историю по FK.
+    is_active   INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0, 1))
 );
 
 -- Все движения денег. Одна строка = одно событие, строки не перезаписываются:

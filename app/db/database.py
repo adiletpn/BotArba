@@ -51,6 +51,23 @@ class Database:
         await self.conn.commit()
         logger.info("Схема применена")
 
+    async def migrate(self) -> None:
+        """Донастроить схему для баз, созданных прошлыми версиями.
+
+        CREATE TABLE IF NOT EXISTS не меняет уже существующую таблицу, поэтому
+        новые колонки добавляются здесь. ALTER TABLE ADD COLUMN в SQLite
+        дешёвый и не перестраивает таблицу.
+        """
+        async with self.conn.execute("PRAGMA table_info(users)") as cursor:
+            columns = {row["name"] for row in await cursor.fetchall()}
+
+        if "is_active" not in columns:
+            await self.conn.execute(
+                "ALTER TABLE users ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1"
+            )
+            await self.conn.commit()
+            logger.info("Миграция: users.is_active добавлена")
+
     async def backup_to(self, target: Path) -> Path:
         """Снять консистентную копию базы.
 
