@@ -136,3 +136,53 @@ async def sync(repo, settings) -> bool:
             len(snapshot["operations"]["rows"]), len(snapshot["daily"]["rows"]),
         )
     return ok
+
+
+class SheetsSyncer:
+    """Фоновая выгрузка по флагу «есть изменения».
+
+    Зачем не выгружать прямо из хендлера: отправка в Google может занять
+    секунды или повиснуть в таймаут, а пользователь в это время ждёт ответа
+    на «Расход». Поэтому хендлеры только поднимают флаг, а выгружает отдельная
+    задача — не чаще, чем раз в `min_interval` секунд, сколько бы операций
+    ни внесли подряд.
+    """
+
+    def __init__(self, repo, settings, min_interval: float = 15.0) -> None:
+        self._repo = repo
+        self._settings = settings
+        self._min_interval = min_interval
+        self._dirty = asyncio.Event()
+        self._task: asyncio.Task | None = None
+
+    def request(self) -> None:
+        """Отметить, что база изменилась. Безопасно вызывать сколько угодно."""
+        if self._settings.sheets_enabled:
+            self._dirty.set()
+
+    def start(self) -> None:
+        if self._settings.sheets_enabled and self._task is None:
+            self._task = asyncio.create_task(self._loop(), name="sheets-sync")
+            logger.info("Выгрузка в Google Таблицы включена")
+
+    async def stop(self) -> None:
+        if self._task is not None:
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
+            self._task = None
+
+    async def _loop(self) -> None:
+        while True:
+            await self._dirty.wait()
+            self._dirty.clear()
+            try:
+                await sync(self._repo, self._settings)
+            except Exception:
+                # Упавшая выгрузка не должна убивать задачу: следующая
+                # операция снова поднимет флаг, и мы попробуем ещё раз.
+                logger.exception("Выгрузка в Google Таблицы сорвалась")
+            # Пауза ПОСЛЕ выгрузки: серия быстрых правок склеится в один запрос.
+            await asyncio.sleep(self._min_interval)
