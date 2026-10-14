@@ -64,3 +64,26 @@ async def test_nothing_is_recorded_before_the_start_balance_exists(
 
     assert "ignored" in (await response.json())["outcome"]
     assert await repo.balance() == 0
+
+
+async def test_unsigned_webhook_never_touches_the_balance(aiohttp_client, repo, settings):
+    """Без секрета подписи адрес вебхука — открытая дверь. Не записываем ничего.
+
+    Деньги при этом не теряются: часовая сверка подтянет оплату через API,
+    где нас авторизует ключ.
+    """
+    from dataclasses import replace
+
+    unprotected = replace(settings, apipay_webhook_secret="")
+    await repo.set_start_balance(100_000_000, created_by=1)
+    client = await aiohttp_client(create_app(repo, unprotected))
+
+    raw = json.dumps(_event(now_utc())).encode()
+    response = await client.post(
+        unprotected.webhook_route, data=raw, headers={"Content-Type": "application/json"}
+    )
+
+    # 200, чтобы ApiPay не ретраил бесконечно, но в баланс ничего не идёт
+    assert response.status == 200
+    assert "ignored" in (await response.json())["outcome"]
+    assert await repo.balance() == 100_000_000

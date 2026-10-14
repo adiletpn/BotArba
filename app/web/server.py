@@ -29,8 +29,23 @@ from app.services.sync import record_webhook_refund
 logger = logging.getLogger(__name__)
 
 
-async def _handle_payload(repo, payload: dict, sandbox_mode: bool) -> str:
-    """Применить событие к балансу. Вернуть строку исхода для журнала."""
+async def _handle_payload(
+    repo, payload: dict, sandbox_mode: bool, *, trusted: bool = True
+) -> str:
+    """Применить событие к балансу. Вернуть строку исхода для журнала.
+
+    ``trusted=False`` означает, что подпись не проверялась (секрет не настроен).
+    Такое событие в баланс не попадает: адрес вебхука публичный, и без подписи
+    кто угодно может прислать поддельное поступление. Деньги всё равно не
+    потеряются — часовая сверка подтянет оплату через API, где нас авторизует
+    ключ.
+    """
+    if not trusted:
+        raise IgnoredEvent(
+            "подпись не проверена: APIPAY_WEBHOOK_SECRET не задан. "
+            "Оплата будет учтена часовой сверкой"
+        )
+
     name = event_name(payload)
     if name not in HANDLED_EVENTS:
         raise IgnoredEvent(f"событие {name!r} баланс не меняет")
@@ -103,7 +118,10 @@ def create_app(repo, settings) -> web.Application:
             return web.json_response({"error": "invalid json"}, status=400)
 
         try:
-            outcome = await _handle_payload(repo, payload, settings.apipay_sandbox)
+            outcome = await _handle_payload(
+                repo, payload, settings.apipay_sandbox,
+                trusted=bool(settings.apipay_webhook_secret),
+            )
         except IgnoredEvent as ignored:
             outcome = f"ignored: {ignored.reason}"
         except Exception:
