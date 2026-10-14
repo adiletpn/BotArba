@@ -49,8 +49,8 @@ def _positive_int(name: str, default: int) -> int:
         value = int(raw)
     except ValueError as exc:
         raise ConfigError(f"{name} должно быть целым числом, получено {raw!r}") from exc
-    if value <= 0:
-        raise ConfigError(f"{name} должно быть больше нуля")
+    if value < 0:
+        raise ConfigError(f"{name} не может быть отрицательным")
     return value
 
 
@@ -153,7 +153,9 @@ def load_settings(env_file: str | os.PathLike[str] | None = ".env") -> Settings:
         summary_hour=summary_hour,
         summary_minute=summary_minute,
         web_host=_optional("WEB_HOST", "0.0.0.0") or "0.0.0.0",
-        web_port=_positive_int("WEB_PORT", 8080),
+        # Railway задаёт порт сам через PORT и ждёт, что процесс слушает именно его.
+        # WEB_PORT остаётся для локального запуска и VPS.
+        web_port=_positive_int("PORT", 0) or _positive_int("WEB_PORT", 8080),
         sync_window_days=_positive_int("SYNC_WINDOW_DAYS", 2),
         undo_window_minutes=_positive_int("UNDO_WINDOW_MINUTES", 10),
         backup_dir=Path(_optional("BACKUP_DIR", "./backups") or "./backups"),
