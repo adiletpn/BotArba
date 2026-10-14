@@ -80,3 +80,89 @@ async def test_daily_sheet_carries_a_running_balance(repo, settings):
     assert [row[0] for row in rows] == ["12.10.2026", "13.10.2026"]
     assert rows[0][5] == 1_000_000          # баланс на конец 12-го
     assert rows[1][5] == 1_050_000          # и на конец 13-го
+
+
+async def _fake_apps_script(received: list, *, token: str):
+    """Двойник веб-приложения Apps Script: та же проверка пароля и ответ."""
+    from aiohttp import web
+
+    async def handler(request: web.Request) -> web.Response:
+        payload = await request.json()
+        if payload.get("token") != token:
+            return web.json_response({"error": "доступ запрещён"})
+        received.append(payload)
+        return web.json_response({
+            "ok": True,
+            "operations": len(payload["operations"]["rows"]),
+            "daily": len(payload["daily"]["rows"]),
+        })
+
+    app = web.Application()
+    app.router.add_post("/exec", handler)
+    return app
+
+
+async def test_snapshot_reaches_the_web_app(aiohttp_server, repo, settings):
+    from app.services.sheets import sync
+
+    received: list = []
+    server = await aiohttp_server(await _fake_apps_script(received, token="s3cret"))
+    configured = replace(
+        settings,
+        sheets_webapp_url=str(server.make_url("/exec")),
+        sheets_token="s3cret",
+    )
+
+    await repo.set_start_balance(100_000_000, created_by=1)
+    assert await sync(repo, configured) is True
+
+    assert len(received) == 1
+    assert received[0]["token"] == "s3cret"
+    assert received[0]["operations"]["rows"][0][3] == "Старт"
+    assert "generated_at" in received[0]
+
+
+async def test_wrong_token_is_reported_as_failure(aiohttp_server, repo, settings):
+    from app.services.sheets import sync
+
+    received: list = []
+    server = await aiohttp_server(await _fake_apps_script(received, token="s3cret"))
+    configured = replace(
+        settings,
+        sheets_webapp_url=str(server.make_url("/exec")),
+        sheets_token="неправильный",
+    )
+
+    assert await sync(repo, configured) is False
+    assert received == [], "при неверном пароле данные не должны записываться"
+
+
+async def test_sync_is_skipped_when_not_configured(repo, settings):
+    from app.services.sheets import sync
+
+    assert settings.sheets_enabled is False
+    assert await sync(repo, settings) is False
+
+
+async def test_html_error_page_is_not_mistaken_for_success(aiohttp_server, repo, settings):
+    """Google при ошибке отдаёт HTML со статусом 200 — это не успех."""
+    from aiohttp import web
+
+    from app.services.sheets import sync
+
+    async def handler(_: web.Request) -> web.Response:
+        # В настоящей странице ошибки Google слово «cookie» есть почти всегда,
+        # а в нём содержится подстрока «ok».
+        return web.Response(
+            text="<html><body>Enable cookies to continue</body></html>",
+            content_type="text/html",
+        )
+
+    app = web.Application()
+    app.router.add_post("/exec", handler)
+    server = await aiohttp_server(app)
+
+    configured = replace(
+        settings, sheets_webapp_url=str(server.make_url("/exec")), sheets_token="s3cret"
+    )
+    assert await sync(repo, configured) is False

@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 
 import aiohttp
@@ -115,8 +116,22 @@ async def push_snapshot(settings, snapshot: dict) -> bool:
                 if response.status != 200:
                     logger.warning("Google Таблицы: HTTP %s — %s", response.status, body)
                     return False
-                if '"ok"' not in body and "ok" not in body:
-                    logger.warning("Google Таблицы ответили неожиданно: %s", body)
+
+                # Ответ разбираем как JSON, а не ищем "ok" подстрокой: при
+                # ошибке Google отдаёт HTML-страницу со статусом 200, и в её
+                # тексте слово «ok» легко встречается (например, внутри
+                # «cookie») — подстрочная проверка принимала бы отказ за успех.
+                try:
+                    result = json.loads(body)
+                except ValueError:
+                    logger.warning(
+                        "Google Таблицы вернули не JSON (вероятно, страница "
+                        "ошибки или неверный адрес): %s", body
+                    )
+                    return False
+
+                if not isinstance(result, dict) or result.get("ok") is not True:
+                    logger.warning("Скрипт отклонил выгрузку: %s", body)
                     return False
                 return True
     except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
