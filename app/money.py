@@ -110,3 +110,16 @@ def format_tenge(tiyn: int, *, with_sign_symbol: bool = True) -> str:
 
     out = f"−{grouped}" if negative else grouped
     return f"{out}{GROUP_SEPARATOR}{TENGE_SIGN}" if with_sign_symbol else out
+
+
+def format_delta(tiyn: int) -> str:
+    """Сумма со явным знаком: "+190 000 ₸" / "−100 000 ₸".
+
+    Используется в строках «Поступления» и «Расходы» сводки, где знак несёт
+    смысл движения, а не отрицательности самого числа.
+    """
+    if tiyn == 0:
+        return format_tenge(0)
+    if tiyn > 0:
+        return f"+{format_tenge(tiyn)}"
+    return format_tenge(tiyn)
