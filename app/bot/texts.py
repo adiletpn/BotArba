@@ -61,6 +61,8 @@ CAPABILITIES = (
     "<b>Команды</b>\n"
     "/income — поступление, которого не видит ApiPay (наличные, перевод)\n"
     "/correct — поправить баланс: <code>+50000</code> или <code>-50000</code>\n"
+    "<i>Сумму можно писать прямо в команде: <code>/income 50000</code>, "
+    "<code>/correct -20000</code>, <code>/expense 5000</code></i>\n"
     "/settings — время вечерней сводки и последняя сверка\n"
     "/settime — сменить время сводки, например <code>/settime 19:30</code>\n"
     "/export — выгрузить в Google Таблицы прямо сейчас\n"
