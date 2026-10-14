@@ -103,6 +103,9 @@ function prepareSheet(spreadsheet, name, tabColor) {
   }
 
   sheet.clear();
+  // clear() не разъединяет ячейки: объединения из шапки прошлой выгрузки
+  // пережили бы очистку и сломали бы раскладку следующей.
+  sheet.getRange(1, 1, sheet.getMaxRows(), sheet.getMaxColumns()).breakApart();
   sheet.setHiddenGridlines(true);
   sheet.setTabColor(tabColor);
   return sheet;
