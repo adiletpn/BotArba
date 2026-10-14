@@ -58,4 +58,9 @@ async def settings(tmp_path):
         undo_window_minutes=10,
         backup_dir=Path(tmp_path / "backups"),
         backup_keep_days=14,
+        # Выгрузка в таблицу по умолчанию выключена: тесты, которым она нужна,
+        # включают её через dataclasses.replace.
+        sheets_webapp_url="",
+        sheets_token="",
+        sheets_sync_minutes=10,
     )
