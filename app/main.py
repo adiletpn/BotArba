@@ -37,6 +37,10 @@ async def prepare_database(settings: Settings) -> tuple[Database, Repo]:
 
     repo = Repo(db, settings.timezone)
     await repo.seed_categories()
+    await repo.seed_settings(
+        f"{settings.summary_hour:02d}:{settings.summary_minute:02d}",
+        settings.timezone_name,
+    )
     await repo.ensure_owners(settings.owner_ids)
     logger.info("Белый список: %s", ", ".join(map(str, settings.owner_ids)))
     return db, repo
@@ -61,8 +65,10 @@ async def run(settings: Settings) -> None:
             "работает только ручной учёт (/income, /correct, расходы)."
         )
 
-    scheduler = create_scheduler(bot, db, repo, settings)
+    scheduler = await create_scheduler(bot, db, repo, settings)
     scheduler.start()
+    # Хендлер /settime переносит задание на лету — для этого ему нужен сам планировщик.
+    dispatcher["scheduler"] = scheduler
 
     try:
         # Накопленные за простой апдейты пропускаем: отвечать на расход,

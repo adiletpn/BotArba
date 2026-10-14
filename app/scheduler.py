@@ -59,13 +59,22 @@ async def run_backup(db, settings) -> None:
         logger.exception("Бэкап не удался")
 
 
-def create_scheduler(bot, db, repo, settings) -> AsyncIOScheduler:
+SUMMARY_JOB_ID = "evening_summary"
+
+
+async def create_scheduler(bot, db, repo, settings) -> AsyncIOScheduler:
     """Собрать планировщик.
+
+    Время сводки читается из НАСТРОЕК В БАЗЕ, а не из окружения: ТЗ требует,
+    чтобы его можно было менять без редеплоя (команда /settime).
 
     coalesce + misfire_grace_time нужны потому, что контейнер на Railway
     может быть перезапущен: пропущенный запуск должен выполниться один раз
     при старте, а не N раз подряд и не потеряться совсем.
     """
+    summary_hour, summary_minute = await repo.get_summary_time(
+        (settings.summary_hour, settings.summary_minute)
+    )
     scheduler = AsyncIOScheduler(
         timezone=settings.timezone,
         job_defaults={"coalesce": True, "misfire_grace_time": 3600, "max_instances": 1},
@@ -73,9 +82,9 @@ def create_scheduler(bot, db, repo, settings) -> AsyncIOScheduler:
 
     scheduler.add_job(
         send_evening_summary,
-        CronTrigger(hour=settings.summary_hour, minute=settings.summary_minute),
+        CronTrigger(hour=summary_hour, minute=summary_minute),
         args=(bot, repo, settings),
-        id="evening_summary",
+        id=SUMMARY_JOB_ID,
         name="Вечерняя сводка",
     )
 
@@ -98,6 +107,14 @@ def create_scheduler(bot, db, repo, settings) -> AsyncIOScheduler:
 
     logger.info(
         "Планировщик: сводка в %02d:%02d (%s), сверка каждый час, бэкап в 03:30",
-        settings.summary_hour, settings.summary_minute, settings.timezone_name,
+        summary_hour, summary_minute, settings.timezone_name,
     )
     return scheduler
+
+
+def reschedule_summary(scheduler: AsyncIOScheduler, hour: int, minute: int) -> None:
+    """Перенести вечернюю сводку на новое время без перезапуска процесса."""
+    scheduler.reschedule_job(
+        SUMMARY_JOB_ID, trigger=CronTrigger(hour=hour, minute=minute)
+    )
+    logger.info("Вечерняя сводка перенесена на %02d:%02d", hour, minute)
