@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 
 from collections.abc import Callable
 
-from app.clock import local_date_of, now_utc, to_utc_text
+from app.clock import local_date_of, now_utc, parse_utc_text, to_utc_text
 from app.db.database import Database
 from app.db.models import Operation, OperationSource, OperationType
 
@@ -184,6 +184,23 @@ class Repo:
             "SELECT 1 FROM operations WHERE type = 'start' AND is_cancelled = 0 LIMIT 1"
         ) as cursor:
             return await cursor.fetchone() is not None
+
+    async def start_balance_moment(self) -> datetime | None:
+        """Когда зафиксирована стартовая сумма — граница учёта ApiPay.
+
+        Стартовая сумма — это снимок денег на руках. Оплаты, прошедшие ДО
+        неё, в этих деньгах уже лежат, поэтому записывать их отдельной
+        операцией нельзя: баланс удвоится ровно на их сумму.
+        """
+        async with self._db.conn.execute(
+            """
+            SELECT occurred_at FROM operations
+            WHERE type = 'start' AND is_cancelled = 0
+            ORDER BY occurred_at ASC LIMIT 1
+            """
+        ) as cursor:
+            row = await cursor.fetchone()
+        return parse_utc_text(row["occurred_at"]) if row else None
 
     async def set_start_balance(self, amount: int, created_by: int) -> int | None:
         """Записать стартовый баланс, если его ещё нет.
