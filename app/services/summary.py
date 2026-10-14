@@ -43,7 +43,7 @@ async def build_day_summary(
     вместо того чтобы быть замазанным арифметикой.
     """
     totals = await repo.day_totals(local_date)
-    opening = await repo.balance_before(local_date)
+    opening = await repo.opening_balance(local_date)
     balance = await repo.balance()
     rows = await repo.day_expenses_by_category(local_date)
     last_sync = await repo.get_last_apipay_sync()

@@ -197,16 +197,35 @@ class Repo:
         return int(row["total"])
 
     async def balance_before(self, local_date: str) -> int:
-        """«Остаток на начало дня» — баланс на 00:00 указанного дня.
-
-        В первый день это стартовая сумма: операций раньше просто нет.
-        """
+        """Баланс строго до начала указанного дня."""
         async with self._db.conn.execute(
             """
             SELECT COALESCE(SUM(amount), 0) AS total FROM operations
             WHERE is_cancelled = 0 AND local_date < ?
             """,
             (local_date,),
+        ) as cursor:
+            row = await cursor.fetchone()
+        return int(row["total"])
+
+    async def opening_balance(self, local_date: str) -> int:
+        """«Остаток на начало дня» для сводки.
+
+        Это баланс до начала дня ПЛЮС стартовая сумма, если её задали в этот
+        же день. ТЗ прямо требует: «в первый день это стартовая сумма» — иначе
+        в день установки бота сводка показывала бы «На начало дня: 0 ₸» при
+        непустом балансе, и строки не сходились бы друг с другом.
+
+        Стартовая сумма — не выручка дня, а точка отсчёта, поэтому в
+        «Поступления» она тоже не идёт.
+        """
+        async with self._db.conn.execute(
+            """
+            SELECT COALESCE(SUM(amount), 0) AS total FROM operations
+            WHERE is_cancelled = 0
+              AND (local_date < ? OR (local_date = ? AND type = 'start'))
+            """,
+            (local_date, local_date),
         ) as cursor:
             row = await cursor.fetchone()
         return int(row["total"])
