@@ -239,3 +239,104 @@ function renderOperations(spreadsheet, block) {
 
   sheet.getRange(1, 1, lastRow, width).createFilter();
 }
+
+const DAILY_WIDTHS = [110, 136, 136, 150, 136, 176, 90];
+
+/** Четыре показателя над таблицей: то, ради чего таблицу открывают. */
+function drawHeadline(sheet, summary, generatedAt) {
+  const tiles = [
+    { column: 1, span: 2, label: 'БАЛАНС СЕЙЧАС', value: summary.balance, money: true, hero: true },
+    { column: 3, span: 1, label: 'ПОСТУПЛЕНИЯ СЕГОДНЯ', value: summary.today_income, money: true },
+    { column: 4, span: 1, label: 'РАСХОДЫ СЕГОДНЯ', value: summary.today_expense, money: true },
+    { column: 5, span: 2, label: 'ОПЛАТ СЕГОДНЯ', value: summary.today_payments, money: false },
+  ];
+
+  tiles.forEach(function (tile) {
+    const label = sheet.getRange(1, tile.column, 1, tile.span);
+    const value = sheet.getRange(2, tile.column, 1, tile.span);
+    if (tile.span > 1) {
+      label.merge();
+      value.merge();
+    }
+
+    label.setValue(tile.label)
+      .setFontFamily(FONT).setFontSize(9).setFontColor(INK_MUTED)
+      .setVerticalAlignment('bottom');
+
+    value.setValue(tile.value)
+      .setFontFamily(FONT)
+      .setFontSize(tile.hero ? 22 : 15)
+      .setFontWeight('bold')
+      .setFontColor(tile.value < 0 ? NEGATIVE : INK)
+      .setVerticalAlignment('middle');
+
+    if (tile.money) {
+      value.setNumberFormat(MONEY_FORMAT);
+    }
+  });
+
+  // Поступления всегда зелёные, даже когда их ноль: это постоянный смысл
+  // колонки, а не свойство конкретного числа.
+  sheet.getRange(2, 3).setFontColor(summary.today_income > 0 ? POSITIVE : INK_MUTED);
+
+  sheet.getRange(1, 7).setValue('Обновлено')
+    .setFontFamily(FONT).setFontSize(9).setFontColor(INK_MUTED)
+    .setHorizontalAlignment('right').setVerticalAlignment('bottom');
+  sheet.getRange(2, 7).setValue(generatedAt || '')
+    .setFontFamily(FONT).setFontSize(9).setFontColor(INK_SOFT)
+    .setHorizontalAlignment('right').setVerticalAlignment('middle');
+
+  sheet.setRowHeight(1, 22);
+  sheet.setRowHeight(2, 40);
+  sheet.setRowHeight(3, 14);   // воздух между показателями и таблицей
+}
+
+function renderDaily(spreadsheet, payload) {
+  const block = payload.daily;
+  if (!block || !block.header) {
+    return;
+  }
+
+  const sheet = prepareSheet(spreadsheet, DAILY_SHEET, INK);
+  const rows = block.rows || [];
+
+  if (payload.summary) {
+    drawHeadline(sheet, payload.summary, payload.generated_at);
+  }
+
+  const headerRow = payload.summary ? 4 : 1;
+  const lastRow = drawTable(sheet, block.header, rows, headerRow, {
+    moneyColumns: [2, 3, 4, 5, 6],
+    countColumns: [7],
+  });
+
+  DAILY_WIDTHS.forEach(function (width, index) {
+    if (index < block.header.length) {
+      sheet.setColumnWidth(index + 1, width);
+    }
+  });
+
+  if (rows.length === 0) {
+    return;
+  }
+
+  const firstDataRow = headerRow + 1;
+  const rules = [];
+  [2, 3, 4, 5].forEach(function (column) {
+    moneySignRules(sheet, column, firstDataRow, lastRow).forEach(function (rule) {
+      rules.push(rule);
+    });
+  });
+  sheet.setConditionalFormatRules(rules);
+
+  // Баланс на конец дня — итоговая колонка, её выделяем насыщенностью,
+  // а не цветом: цвет уже занят знаком суммы.
+  sheet.getRange(firstDataRow, 6, lastRow - headerRow, 1)
+    .setFontColor(INK).setFontWeight('bold');
+  sheet.getRange(firstDataRow, 1, lastRow - headerRow, 1).setFontColor(INK);
+  sheet.getRange(firstDataRow, 7, lastRow - headerRow, 1).setFontColor(INK_MUTED);
+
+  // Последняя строка — сегодняшний день: отбиваем линией сверху.
+  sheet.getRange(lastRow, 1, 1, block.header.length)
+    .setBorder(true, null, null, null, null, null, RULE, SpreadsheetApp.BorderStyle.SOLID);
+}
