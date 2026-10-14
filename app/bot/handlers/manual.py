@@ -10,7 +10,7 @@ import logging
 import re
 
 from aiogram import Router
-from aiogram.filters import Command, StateFilter
+from aiogram.filters import Command, CommandObject, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
 
@@ -27,7 +27,24 @@ SKIP_COMMENT = {"-", "–", "нет", "без комментария"}
 
 @router.message(Command("income"))
 @router.message(StateFilter(None), says(*texts.SAY_INCOME))
-async def income_start(message: Message, state: FSMContext) -> None:
+async def income_start(
+    message: Message, state: FSMContext, command: CommandObject | None = None
+) -> None:
+    """Начать поступление. С суммой в команде (`/income 50000`) — сразу к комментарию."""
+    if command is not None and command.args:
+        try:
+            amount = tiyn_from_user(command.args)
+        except AmountError as exc:
+            await message.answer(texts.BAD_AMOUNT.format(reason=exc), parse_mode="HTML")
+            return
+        await state.update_data(amount=amount)
+        await state.set_state(ManualIncome.waiting_comment)
+        await message.answer(
+            texts.ASK_INCOME_COMMENT.format(amount=format_tenge(amount)),
+            parse_mode="HTML",
+        )
+        return
+
     await state.set_state(ManualIncome.waiting_amount)
     await message.answer(texts.ASK_INCOME_AMOUNT, reply_markup=keyboards.cancel_keyboard())
 
@@ -81,7 +98,25 @@ _SIGNED = re.compile(r"^\s*([+−-])?\s*(.+)$", re.DOTALL)
 
 @router.message(Command("correct"))
 @router.message(StateFilter(None), says(*texts.SAY_CORRECT))
-async def correct_start(message: Message, state: FSMContext) -> None:
+async def correct_start(
+    message: Message, state: FSMContext, command: CommandObject | None = None
+) -> None:
+    """Начать корректировку. С суммой в команде (`/correct +50000`) — сразу к причине."""
+    if command is not None and command.args:
+        amount = parse_signed_amount(command.args)
+        if amount is None:
+            await message.answer(
+                texts.BAD_AMOUNT.format(reason="нужно число"), parse_mode="HTML"
+            )
+            return
+        await state.update_data(amount=amount)
+        await state.set_state(Correction.waiting_comment)
+        await message.answer(
+            texts.ASK_CORRECTION_COMMENT.format(amount=format_tenge(amount)),
+            parse_mode="HTML",
+        )
+        return
+
     await state.set_state(Correction.waiting_amount)
     await message.answer(
         texts.ASK_CORRECTION_AMOUNT,

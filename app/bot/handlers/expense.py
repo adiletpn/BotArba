@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 
 from aiogram import F, Router
-from aiogram.filters import Command, StateFilter
+from aiogram.filters import Command, CommandObject, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
@@ -33,19 +33,24 @@ async def cancel_input(message: Message, state: FSMContext) -> None:
 @router.message(F.text == texts.BTN_EXPENSE)
 @router.message(Command("expense"))
 @router.message(StateFilter(None), says(*texts.SAY_EXPENSE))
-async def expense_start(message: Message, state: FSMContext) -> None:
+async def expense_start(
+    message: Message, state: FSMContext, repo, command: CommandObject | None = None
+) -> None:
+    """Начать расход. С суммой в команде (`/expense 5000`) — сразу к статье."""
+    if command is not None and command.args:
+        try:
+            amount = tiyn_from_user(command.args)
+        except AmountError as exc:
+            await message.answer(texts.BAD_AMOUNT.format(reason=exc), parse_mode="HTML")
+            return
+        await _ask_category(message, state, repo, amount)
+        return
+
     await state.set_state(Expense.waiting_amount)
     await message.answer(texts.ASK_EXPENSE_AMOUNT, parse_mode="HTML")
 
 
-@router.message(Expense.waiting_amount, not_command)
-async def expense_amount(message: Message, state: FSMContext, repo) -> None:
-    try:
-        amount = tiyn_from_user(message.text or "")
-    except AmountError as exc:
-        await message.answer(texts.BAD_AMOUNT.format(reason=exc), parse_mode="HTML")
-        return
-
+async def _ask_category(message: Message, state: FSMContext, repo, amount: int) -> None:
     # Список статей кладём в состояние: кнопки присылают его индекс, и
     # порядок обязан совпасть с тем, что видел пользователь, даже если
     # между шагами кто-то добавил новую статью.
@@ -57,6 +62,17 @@ async def expense_amount(message: Message, state: FSMContext, repo) -> None:
         parse_mode="HTML",
         reply_markup=keyboards.categories_keyboard(names),
     )
+
+
+@router.message(Expense.waiting_amount, not_command)
+async def expense_amount(message: Message, state: FSMContext, repo) -> None:
+    try:
+        amount = tiyn_from_user(message.text or "")
+    except AmountError as exc:
+        await message.answer(texts.BAD_AMOUNT.format(reason=exc), parse_mode="HTML")
+        return
+
+    await _ask_category(message, state, repo, amount)
 
 
 async def _save_expense(
