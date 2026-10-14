@@ -50,3 +50,63 @@ def tiyn_from_api(value: str | int | float | Decimal) -> int:
     if tiyn != amount * TIYN_PER_TENGE:
         raise AmountError(f"Сумма ApiPay точнее тиына: {value!r}")
     return int(tiyn)
+
+
+def tiyn_from_user(text: str) -> int:
+    """Разобрать сумму, введённую пользователем в чате.
+
+    Принимаем то, как люди реально пишут суммы: "1000000", "1 000 000",
+    "1 000 000 ₸", "1000000.50", "1000000,50", "100 000тг".
+    Отрицательные значения не принимаем: знак задаёт тип операции, не сумма.
+    """
+    if text is None:
+        raise AmountError("Пустая сумма")
+
+    cleaned = text.strip().lower()
+    for junk in (TENGE_SIGN, "тг", "тенге", "kzt", "т."):
+        cleaned = cleaned.replace(junk, "")
+    # Пробелы (включая неразрывные) и апострофы — разделители разрядов.
+    for space in (" ", " ", " ", "'", "_"):
+        cleaned = cleaned.replace(space, "")
+    cleaned = cleaned.replace(",", ".").strip()
+
+    if not cleaned:
+        raise AmountError("Пустая сумма")
+    if cleaned.count(".") > 1:
+        raise AmountError("Слишком много разделителей в сумме")
+    if not cleaned.replace(".", "").isdigit():
+        raise AmountError("Сумма должна быть числом")
+
+    try:
+        amount = Decimal(cleaned)
+    except InvalidOperation as exc:
+        raise AmountError("Сумма должна быть числом") from exc
+
+    if amount <= 0:
+        raise AmountError("Сумма должна быть больше нуля")
+
+    tiyn = amount * TIYN_PER_TENGE
+    if tiyn != tiyn.to_integral_value():
+        raise AmountError("Сумма точнее тиына — максимум два знака после запятой")
+
+    result = int(tiyn)
+    if result > MAX_AMOUNT_TIYN:
+        raise AmountError("Сумма слишком большая")
+    return result
+
+
+def format_tenge(tiyn: int, *, with_sign_symbol: bool = True) -> str:
+    """Показать сумму в тенге: "1 000 000 ₸".
+
+    Копейки печатаются только если они не нулевые (требование ТЗ).
+    Знак минуса — типографский U+2212, как в образцах сообщений из ТЗ.
+    """
+    negative = tiyn < 0
+    whole, remainder = divmod(abs(int(tiyn)), TIYN_PER_TENGE)
+
+    grouped = f"{whole:,}".replace(",", GROUP_SEPARATOR)
+    if remainder:
+        grouped = f"{grouped},{remainder:02d}"
+
+    out = f"−{grouped}" if negative else grouped
+    return f"{out}{GROUP_SEPARATOR}{TENGE_SIGN}" if with_sign_symbol else out
