@@ -198,3 +198,56 @@ async def correction_comment(message: Message, state: FSMContext, repo, user_id:
         parse_mode="HTML",
         reply_markup=keyboards.main_keyboard(),
     )
+
+
+@router.message(Command("reconcile"))
+async def reconcile_with_kaspi(
+    message: Message,
+    state: FSMContext,
+    repo,
+    user_id: int,
+    command: CommandObject | None = None,
+    is_admin: bool = True,
+) -> None:
+    """Сверить баланс с остатком Kaspi: «/reconcile 1663000».
+
+    Остаток счёта ApiPay не отдаёт, поэтому подтянуть его сам бот не может.
+    Эта команда — ближайшая замена: человек смотрит цифру в Kaspi Pay, а
+    разницу бот считает сам и в ту же секунду. Ручной `/correct` требовал
+    вычитать в уме, и именно так 14 октября в баланс попала ошибка.
+    """
+    if not is_admin:
+        await message.answer(texts.ADMIN_ONLY)
+        return
+
+    await state.clear()
+    raw = command.args if command is not None else ""
+    try:
+        target = tiyn_from_user(raw or "")
+    except AmountError:
+        await message.answer(texts.RECONCILE_USAGE, parse_mode="HTML")
+        return
+
+    before = await repo.balance()
+    delta = await repo.align_balance_to(
+        target,
+        comment=f"Сверка с Kaspi: на счёте {format_tenge(target)}",
+        created_by=user_id,
+    )
+    if delta is None:
+        await message.answer(
+            texts.RECONCILE_EQUAL.format(balance=format_tenge(target)), parse_mode="HTML"
+        )
+        return
+
+    logger.info("Сверка с Kaspi: поправка %s тиын, целевой баланс %s", delta, target)
+    sign = "+" if delta > 0 else ""
+    await message.answer(
+        texts.RECONCILE_DONE.format(
+            before=format_tenge(target - delta),
+            target=format_tenge(target),
+            delta=f"{sign}{format_tenge(delta)}",
+        ),
+        parse_mode="HTML",
+        reply_markup=keyboards.main_keyboard(),
+    )

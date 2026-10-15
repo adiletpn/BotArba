@@ -151,6 +151,45 @@ class Repo:
         self._changed()
         return int(row["id"])
 
+    async def align_balance_to(
+        self, target: int, *, comment: str, created_by: int
+    ) -> int | None:
+        """Довести баланс ровно до ``target`` одной корректировкой.
+
+        Разница считается и записывается ОДНИМ запросом. Если прочитать баланс,
+        а потом отдельно записать поправку, то оплата, которую сверка успеет
+        записать между этими двумя шагами, сбила бы итог на свою сумму.
+
+        Вернуть записанную поправку (со знаком) или None, если баланс уже
+        совпадал и писать нечего.
+        """
+        moment = now_utc()
+        async with self._db.conn.execute(
+            """
+            INSERT INTO operations (
+                type, amount, comment, source, created_by,
+                occurred_at, created_at, local_date
+            )
+            SELECT 'correction', ? - COALESCE(SUM(amount), 0), ?, 'manual', ?,
+                   ?, ?, ?
+            FROM operations WHERE is_cancelled = 0
+            HAVING ? - COALESCE(SUM(amount), 0) <> 0
+            RETURNING amount
+            """,
+            (
+                target, comment, created_by,
+                to_utc_text(moment), to_utc_text(moment), local_date_of(moment, self._tz),
+                target,
+            ),
+        ) as cursor:
+            row = await cursor.fetchone()
+        await self._db.conn.commit()
+
+        if row is None:
+            return None
+        self._changed()
+        return int(row["amount"])
+
     async def get_operation(self, operation_id: int) -> Operation | None:
         async with self._db.conn.execute(
             "SELECT * FROM operations WHERE id = ?", (operation_id,)
