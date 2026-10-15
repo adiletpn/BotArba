@@ -9,6 +9,7 @@ import sys
 from aiohttp import web
 
 from app.bot.factory import create_bot, create_dispatcher, register_commands
+from app.clock import now_utc
 from app.config import ConfigError, Settings, load_settings
 from app.db.database import Database
 from app.db.repo import Repo
@@ -52,7 +53,9 @@ async def run(settings: Settings) -> None:
     bot = create_bot(settings.bot_token)
     dispatcher = create_dispatcher(repo, settings)
 
-    runner = web.AppRunner(create_app(repo, settings))
+    scheduler = await create_scheduler(bot, db, repo, settings)
+
+    runner = web.AppRunner(create_app(repo, settings, scheduler))
     await runner.setup()
     site = web.TCPSite(runner, settings.web_host, settings.web_port)
     await site.start()
@@ -73,8 +76,18 @@ async def run(settings: Settings) -> None:
     syncer.start()
     syncer.request()   # первая выгрузка при старте, чтобы таблица догнала базу
 
-    scheduler = await create_scheduler(bot, db, repo, settings)
     scheduler.start()
+
+    # Печатаем ФАКТИЧЕСКОЕ время следующего запуска, а не то, что мы задумали.
+    # Пока лог показывал намерение («сводка в 21:00»), он скрывал, что триггер
+    # считает время по UTC: расхождение всплыло только сообщением в 02:00.
+    for job in sorted(scheduler.get_jobs(), key=lambda j: j.next_run_time or now_utc()):
+        if job.next_run_time:
+            logger.info(
+                "Задание «%s» — следующий запуск %s",
+                job.name,
+                job.next_run_time.astimezone(settings.timezone).strftime("%d.%m %H:%M %Z"),
+            )
     # Хендлер /settime переносит задание на лету — для этого ему нужен сам планировщик.
     dispatcher["scheduler"] = scheduler
 

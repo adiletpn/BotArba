@@ -87,7 +87,7 @@ async def _handle_payload(
     return "refund_recorded"
 
 
-def create_app(repo, settings) -> web.Application:
+def create_app(repo, settings, scheduler=None) -> web.Application:
     """Собрать aiohttp-приложение с вебхуком и health-check."""
 
     async def webhook(request: web.Request) -> web.Response:
@@ -146,8 +146,19 @@ def create_app(repo, settings) -> web.Application:
         return web.json_response({"status": "ok", "outcome": outcome})
 
     async def health(_: web.Request) -> web.Response:
-        """Railway дергает этот путь, чтобы понять, что контейнер жив."""
-        return web.json_response({"status": "ok", "balance_ops": await repo.balance()})
+        """Railway дергает этот путь, чтобы понять, что контейнер жив.
+
+        Заодно отдаём расписание: время следующего запуска — единственный
+        способ снаружи убедиться, что задания считают время в нужной зоне.
+        """
+        body = {"status": "ok", "balance_ops": await repo.balance()}
+        if scheduler is not None:
+            body["jobs"] = {
+                job.id: job.next_run_time.astimezone(settings.timezone).isoformat()
+                for job in scheduler.get_jobs()
+                if job.next_run_time
+            }
+        return web.json_response(body)
 
     app = web.Application()
     app.router.add_post(settings.webhook_route, webhook)
