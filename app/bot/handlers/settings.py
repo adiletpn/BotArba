@@ -109,3 +109,61 @@ async def export_now(message: Message, repo, settings) -> None:
         )
     else:
         await notice.edit_text(texts.EXPORT_FAILED)
+
+
+def parse_day(raw: str, tz) -> str | None:
+    """Разобрать «14.10.2026», «14.10», «вчера», «сегодня» в YYYY-MM-DD."""
+    from datetime import date
+
+    from app.clock import shift_local_date, today_local
+
+    text = (raw or "").strip().lower()
+    today = today_local(tz)
+
+    if text in ("", "сегодня"):
+        return today
+    if text == "вчера":
+        return shift_local_date(today, -1)
+    if text == "позавчера":
+        return shift_local_date(today, -2)
+
+    parts = text.replace("/", ".").replace("-", ".").split(".")
+    if not all(part.isdigit() for part in parts):
+        return None
+    try:
+        if len(parts) == 2:
+            day, month = int(parts[0]), int(parts[1])
+            year = date.fromisoformat(today).year
+        elif len(parts) == 3:
+            day, month, year = int(parts[0]), int(parts[1]), int(parts[2])
+            if year < 100:
+                year += 2000
+        else:
+            return None
+        return date(year, month, day).isoformat()
+    except ValueError:
+        return None
+
+
+@router.message(Command("day"))
+async def show_day(message: Message, command: CommandObject, repo, settings) -> None:
+    """Сводка за произвольный день.
+
+    ТЗ требует сводку только за сегодня, но без взгляда в прошлое нельзя
+    разобрать спорный случай: сошлись ли вчерашние цифры и откуда взялась
+    разница с остатком на счёте.
+    """
+    from app.bot.render import as_pre
+    from app.services.summary import build_day_summary, render_summary
+
+    local_date = parse_day(command.args or "", settings.timezone)
+    if local_date is None:
+        await message.answer(texts.DAY_USAGE, parse_mode="HTML")
+        return
+
+    summary = await build_day_summary(repo, local_date)
+    await message.answer(
+        as_pre(render_summary(summary, settings.timezone)),
+        parse_mode="HTML",
+        reply_markup=keyboards.main_keyboard(),
+    )

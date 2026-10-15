@@ -135,6 +135,11 @@ HISTORY_HEADER = "🧾 Последние операции"
 
 WHOAMI = "Ваш Telegram ID: <code>{telegram_id}</code>"
 
+DAY_USAGE = (
+    "Сводка за любой день: <code>/day 14.10.2026</code>\n"
+    "Можно короче: <code>/day 14.10</code> или <code>/day вчера</code>"
+)
+
 SETTINGS_VIEW = (
     "⚙️ Настройки\n\n"
     "Вечерняя сводка: <b>{summary_time}</b> ({timezone})\n"

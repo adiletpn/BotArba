@@ -36,6 +36,7 @@ BOT_COMMANDS = (
     BotCommand(command="balance", description="Баланс и сводка за сегодня"),
     BotCommand(command="expense", description="Внести расход"),
     BotCommand(command="history", description="Последние 10 операций"),
+    BotCommand(command="day", description="Сводка за день, напр. /day 14.10"),
     BotCommand(command="income", description="Ручное поступление (наличные, перевод)"),
     BotCommand(command="correct", description="Корректировка баланса"),
     BotCommand(command="settings", description="Настройки и время сводки"),
