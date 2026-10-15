@@ -108,3 +108,31 @@ async def test_sync_interval_is_clamped_to_an_hour(repo, settings):
     )
     # Больше часа крон по минутам не выражает — откатываемся к разу в час
     assert _fields(scheduler, "hourly_sync")["minute"] == "5"
+
+
+async def test_triggers_ignore_the_container_timezone(repo, settings, monkeypatch):
+    """Регрессия: сводка приходила в 02:00 вместо 21:00.
+
+    CronTrigger без явной зоны берёт ЛОКАЛЬНУЮ зону процесса, а не зону
+    планировщика. На ноутбуке разработчика она Asia/Almaty, и баг не
+    проявлялся; в контейнере Railway — UTC, и «21:00 по Алматы» уезжало
+    на 21:00 UTC, то есть на 02:00 следующего дня.
+
+    Поэтому зону процесса здесь подменяем на UTC: тест обязан падать,
+    если какой-то триггер снова перестанет задавать её явно.
+    """
+    from zoneinfo import ZoneInfo
+
+    import apscheduler.triggers.cron as cron_module
+
+    monkeypatch.setattr(cron_module, "get_localzone", lambda: ZoneInfo("UTC"))
+
+    scheduler = await create_scheduler(bot=None, db=None, repo=repo, settings=settings)
+
+    for job_id in ("evening_summary", "hourly_sync", "daily_backup"):
+        tz = str(_job(scheduler, job_id).trigger.timezone)
+        assert tz == "Asia/Almaty", f"{job_id} считает время по {tz}"
+
+    # И само время осталось тем, что в настройках
+    fields = _fields(scheduler, "evening_summary")
+    assert (fields["hour"], fields["minute"]) == ("21", "0")
