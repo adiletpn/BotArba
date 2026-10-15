@@ -70,7 +70,7 @@ async def set_summary_time(
     await repo.set_summary_time(hour, minute)
 
     if scheduler is not None:
-        reschedule_summary(scheduler, hour, minute)
+        reschedule_summary(scheduler, hour, minute, settings.timezone)
 
     logger.info("Время сводки изменено на %02d:%02d", hour, minute)
     await message.answer(

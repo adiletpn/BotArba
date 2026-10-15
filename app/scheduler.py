@@ -88,6 +88,11 @@ async def create_scheduler(bot, db, repo, settings) -> AsyncIOScheduler:
     summary_hour, summary_minute = await repo.get_summary_time(
         (settings.summary_hour, settings.summary_minute)
     )
+
+    # Зону задаём КАЖДОМУ триггеру явно. Зона планировщика на них не
+    # распространяется: CronTrigger без timezone берёт локальную зону процесса,
+    # а в контейнере это UTC — и «21:00 по Алматы» превращалось в 02:00.
+    tz = settings.timezone
     scheduler = AsyncIOScheduler(
         timezone=settings.timezone,
         job_defaults={"coalesce": True, "misfire_grace_time": 3600, "max_instances": 1},
@@ -95,7 +100,7 @@ async def create_scheduler(bot, db, repo, settings) -> AsyncIOScheduler:
 
     scheduler.add_job(
         send_evening_summary,
-        CronTrigger(hour=summary_hour, minute=summary_minute),
+        CronTrigger(hour=summary_hour, minute=summary_minute, timezone=tz),
         args=(bot, repo, settings),
         id=SUMMARY_JOB_ID,
         name="Вечерняя сводка",
@@ -108,7 +113,8 @@ async def create_scheduler(bot, db, repo, settings) -> AsyncIOScheduler:
     every = max(1, min(settings.sync_every_minutes, 60))
     scheduler.add_job(
         run_sync,
-        CronTrigger(minute=f"*/{every}") if every < 60 else CronTrigger(minute=5),
+        CronTrigger(minute=f"*/{every}", timezone=tz) if every < 60
+        else CronTrigger(minute=5, timezone=tz),
         args=(repo, settings),
         id="hourly_sync",
         name=f"Сверка с ApiPay каждые {every} мин",
@@ -117,7 +123,7 @@ async def create_scheduler(bot, db, repo, settings) -> AsyncIOScheduler:
     if settings.sheets_enabled:
         scheduler.add_job(
             run_sheets_sync,
-            CronTrigger(minute=f"*/{settings.sheets_sync_minutes}"),
+            CronTrigger(minute=f"*/{settings.sheets_sync_minutes}", timezone=tz),
             args=(repo, settings),
             id="sheets_sync",
             name="Выгрузка в Google Таблицы",
@@ -125,7 +131,7 @@ async def create_scheduler(bot, db, repo, settings) -> AsyncIOScheduler:
 
     scheduler.add_job(
         run_backup,
-        CronTrigger(hour=3, minute=30),
+        CronTrigger(hour=3, minute=30, timezone=tz),
         args=(db, settings),
         id="daily_backup",
         name="Ежедневный бэкап базы",
@@ -138,9 +144,10 @@ async def create_scheduler(bot, db, repo, settings) -> AsyncIOScheduler:
     return scheduler
 
 
-def reschedule_summary(scheduler: AsyncIOScheduler, hour: int, minute: int) -> None:
+def reschedule_summary(scheduler: AsyncIOScheduler, hour: int, minute: int, tz=None) -> None:
     """Перенести вечернюю сводку на новое время без перезапуска процесса."""
     scheduler.reschedule_job(
-        SUMMARY_JOB_ID, trigger=CronTrigger(hour=hour, minute=minute)
+        SUMMARY_JOB_ID,
+        trigger=CronTrigger(hour=hour, minute=minute, timezone=tz or scheduler.timezone),
     )
     logger.info("Вечерняя сводка перенесена на %02d:%02d", hour, minute)
