@@ -20,8 +20,10 @@ router = Router(name="start")
 
 
 @router.message(CommandStart())
-async def cmd_start(message: Message, state: FSMContext, repo, settings) -> None:
-    """Поздороваться и, если стартовой суммы ещё нет, попросить её."""
+async def cmd_start(
+    message: Message, state: FSMContext, repo, settings, is_admin: bool = True
+) -> None:
+    """Поздороваться и, если стартовой суммы ещё нет, попросить её у админа."""
     await state.clear()
     await message.answer(
         texts.START_GREETING,
@@ -30,6 +32,12 @@ async def cmd_start(message: Message, state: FSMContext, repo, settings) -> None
     )
 
     if await repo.has_start_balance():
+        return
+
+    if not is_admin:
+        # Стартовая сумма — точка отсчёта всего баланса; ошибка в ней тянется
+        # навсегда. Поэтому задаёт её только администратор.
+        await message.answer(texts.START_BALANCE_BY_ADMIN)
         return
 
     await state.set_state(StartBalance.waiting_amount)
@@ -63,8 +71,13 @@ async def start_balance_retry(callback: CallbackQuery, state: FSMContext) -> Non
 
 @router.callback_query(F.data == "start_balance:yes", StartBalance.waiting_confirm)
 async def start_balance_confirm(
-    callback: CallbackQuery, state: FSMContext, repo, settings, user_id: int
+    callback: CallbackQuery, state: FSMContext, repo, settings, user_id: int,
+    is_admin: bool = True,
 ) -> None:
+    if not is_admin:
+        await state.clear()
+        await callback.answer(texts.ADMIN_ONLY, show_alert=True)
+        return
     data = await state.get_data()
     amount = int(data.get("amount") or 0)
     await state.clear()

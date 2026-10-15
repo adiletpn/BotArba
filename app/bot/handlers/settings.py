@@ -54,13 +54,17 @@ async def show_settings(message: Message, repo, settings) -> None:
 
 @router.message(Command("settime"))
 async def set_summary_time(
-    message: Message, command: CommandObject, repo, settings, scheduler=None
+    message: Message, command: CommandObject, repo, settings, scheduler=None,
+    is_admin: bool = True,
 ) -> None:
     """Сменить время вечерней сводки.
 
     Планировщик переносится немедленно. scheduler может быть None в тестах и
     при запуске без планировщика — тогда новое время применится при старте.
     """
+    if not is_admin:
+        await message.answer(texts.ADMIN_ONLY)
+        return
     parsed = _parse_time(command.args or "")
     if parsed is None:
         await message.answer(texts.SETTIME_USAGE, parse_mode="HTML")

@@ -28,9 +28,15 @@ SKIP_COMMENT = {"-", "–", "нет", "без комментария"}
 @router.message(Command("income"))
 @router.message(StateFilter(None), says(*texts.SAY_INCOME))
 async def income_start(
-    message: Message, state: FSMContext, command: CommandObject | None = None
+    message: Message,
+    state: FSMContext,
+    command: CommandObject | None = None,
+    is_admin: bool = True,
 ) -> None:
     """Начать поступление. С суммой в команде (`/income 50000`) — сразу к комментарию."""
+    if not is_admin:
+        await message.answer(texts.ADMIN_ONLY)
+        return
     if command is not None and command.args:
         try:
             amount = tiyn_from_user(command.args)
@@ -99,9 +105,15 @@ _SIGNED = re.compile(r"^\s*([+−-])?\s*(.+)$", re.DOTALL)
 @router.message(Command("correct"))
 @router.message(StateFilter(None), says(*texts.SAY_CORRECT))
 async def correct_start(
-    message: Message, state: FSMContext, command: CommandObject | None = None
+    message: Message,
+    state: FSMContext,
+    command: CommandObject | None = None,
+    is_admin: bool = True,
 ) -> None:
     """Начать корректировку. С суммой в команде (`/correct +50000`) — сразу к причине."""
+    if not is_admin:
+        await message.answer(texts.ADMIN_ONLY)
+        return
     if command is not None and command.args:
         amount = parse_signed_amount(command.args)
         if amount is None:
