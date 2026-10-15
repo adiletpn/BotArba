@@ -111,7 +111,7 @@ def create_dispatcher(repo, settings) -> Dispatcher:
     dispatcher["repo"] = repo
     dispatcher["settings"] = settings
 
-    guard = WhitelistMiddleware(repo)
+    guard = WhitelistMiddleware(repo, settings.admin_ids)
     dispatcher.message.middleware(guard)
     dispatcher.callback_query.middleware(guard)
 

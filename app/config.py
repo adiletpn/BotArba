@@ -89,6 +89,7 @@ def _summary_time(raw: str) -> tuple[int, int]:
 class Settings:
     bot_token: str
     owner_ids: tuple[int, ...]
+    admin_ids: tuple[int, ...]
 
     apipay_api_key: str
     apipay_webhook_secret: str
@@ -148,9 +149,23 @@ def load_settings(env_file: str | os.PathLike[str] | None = ".env") -> Settings:
 
     summary_hour, summary_minute = _summary_time(_optional("SUMMARY_TIME", "21:00") or "21:00")
 
+    owner_ids = _owner_ids(_require("OWNER_TELEGRAM_IDS"))
+    # Кто может менять баланс: стартовая сумма, /correct, /income, /reconcile.
+    # Не задано — все владельцы (поведение до появления настройки).
+    raw_admins = _optional("ADMIN_TELEGRAM_IDS")
+    admin_ids = _owner_ids(raw_admins) if raw_admins else owner_ids
+    unknown = set(admin_ids) - set(owner_ids)
+    if unknown:
+        raise ConfigError(
+            "ADMIN_TELEGRAM_IDS содержит ID не из OWNER_TELEGRAM_IDS: "
+            + ", ".join(map(str, sorted(unknown)))
+            + ". Администратор баланса должен быть и в белом списке."
+        )
+
     return Settings(
         bot_token=_require("BOT_TOKEN"),
-        owner_ids=_owner_ids(_require("OWNER_TELEGRAM_IDS")),
+        owner_ids=owner_ids,
+        admin_ids=admin_ids,
         apipay_api_key=_optional("APIPAY_API_KEY"),
         apipay_webhook_secret=_optional("APIPAY_WEBHOOK_SECRET"),
         apipay_base_url=(_optional("APIPAY_BASE_URL", "https://api.apipay.kz/api/v1")

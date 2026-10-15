@@ -42,6 +42,7 @@ async def settings(tmp_path):
     return Settings(
         bot_token="123:TEST",
         owner_ids=(OWNER_ID,),
+        admin_ids=(OWNER_ID,),
         apipay_api_key="test-key",
         apipay_webhook_secret="whsec_test",
         apipay_base_url="https://api.apipay.kz/api/v1",

@@ -21,8 +21,10 @@ logger = logging.getLogger(__name__)
 
 
 class WhitelistMiddleware(BaseMiddleware):
-    def __init__(self, repo) -> None:
+    def __init__(self, repo, admin_ids: tuple[int, ...] | None = None) -> None:
         self._repo = repo
+        # None — ограничение не включено, администраторы все владельцы.
+        self._admin_ids = set(admin_ids) if admin_ids is not None else None
 
     async def __call__(
         self,
@@ -47,6 +49,7 @@ class WhitelistMiddleware(BaseMiddleware):
             await self._repo.remember_name(user.id, user.full_name)
 
         data["user_id"] = user.id
+        data["is_admin"] = self._admin_ids is None or user.id in self._admin_ids
         return await handler(event, data)
 
     @staticmethod
