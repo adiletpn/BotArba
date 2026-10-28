@@ -111,7 +111,7 @@ async def run(settings: Settings) -> None:
 
 
 async def _backfill_stats(repo, settings) -> None:
-    """История статистики ArbaFood за 30 дней — один раз, если её ещё нет."""
+    """Пересчитать историю статистики ArbaFood за 30 дней при старте."""
     from app.services.app_stats import StatsError, backfill_history
 
     try:

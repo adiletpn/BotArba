@@ -36,6 +36,7 @@ def test_render_today():
     assert "4 394" in text and "1 669  (38%)" in text
     assert "(2% активных)" in text
     assert "отменено 3" in text
+    assert "Получили заказ сегодня" in text
 
 
 def test_render_past_day_for_the_nightly_send():

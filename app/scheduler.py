@@ -86,10 +86,11 @@ async def run_stats_capture(repo, settings) -> None:
     if not settings.stats_enabled:
         return
     from app.clock import today_local
-    from app.services.app_stats import StatsError, capture_stats
+    from app.services.app_stats import StatsError, capture_stats, refresh_recent_days
 
     try:
         await capture_stats(repo, settings, today_local(settings.timezone))
+        await refresh_recent_days(repo, settings)
     except StatsError:
         logger.warning("Часовой снимок статистики ArbaFood не удался")
 

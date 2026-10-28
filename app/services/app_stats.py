@@ -25,6 +25,11 @@ logger = logging.getLogger(__name__)
 #: Кого считать активным: открывал приложение за столько дней.
 ACTIVE_WINDOW_DAYS = 7
 
+#: «Заказал» = получил заказ: оплатил и ему доставили. Отменённые и те, что
+#: ещё в работе (placed, confirmed), не считаются.
+DELIVERED = "delivered"
+CANCELLED = "cancelled"
+
 _APP_NAME = "arbafood-stats"
 
 #: Последняя ошибка статистики — для /health. Только текст исключения,
@@ -44,10 +49,11 @@ class AppStats:
     computed_at: datetime     # в зоне мерчанта
     users_total: int
     users_active: int
-    buyers: int               # разных людей с неотменённым заказом за день
+    buyers: int               # разных людей, получивших заказ за день
     orders: int               # всех заказов за день
     orders_cancelled: int
     new_users: int
+    orders_in_progress: int = 0  # ещё не доставлены и не отменены
 
 
 class StatsError(RuntimeError):
@@ -138,12 +144,9 @@ def _collect(credentials_json: str, local_day: str, tz: ZoneInfo) -> AppStats:
         .select(["status", "userId"])
         .stream()
     ]
-    cancelled = sum(1 for order in orders if order.get("status") == "cancelled")
-    buyers = {
-        order.get("userId")
-        for order in orders
-        if order.get("status") != "cancelled" and order.get("userId")
-    }
+    cancelled = sum(1 for order in orders if order.get("status") == CANCELLED)
+    delivered = [order for order in orders if order.get("status") == DELIVERED]
+    buyers = {order.get("userId") for order in delivered if order.get("userId")}
 
     return AppStats(
         day=local_day,
@@ -155,6 +158,7 @@ def _collect(credentials_json: str, local_day: str, tz: ZoneInfo) -> AppStats:
         orders=len(orders),
         orders_cancelled=cancelled,
         new_users=new_users,
+        orders_in_progress=len(orders) - len(delivered) - cancelled,
     )
 
 
@@ -199,7 +203,7 @@ def render_stats(stats: AppStats) -> str:
         day_word = "за день"
 
     def row(label: str, value: str, note: str = "") -> str:
-        line = f"{label:<22}{value:>7}"
+        line = f"{label:<27}{value:>7}"
         return f"{line}  {note}" if note else line
 
     lines = [
@@ -208,12 +212,16 @@ def render_stats(stats: AppStats) -> str:
         row("Пользователей:", _num(stats.users_total)),
         row(f"Активных за {ACTIVE_WINDOW_DAYS} дн.:", _num(stats.users_active),
             f"({percent(stats.users_active, stats.users_total)})"),
-        row(f"Заказали {day_word}:", _num(stats.buyers),
+        row(f"Получили заказ {day_word}:", _num(stats.buyers),
             f"({percent(stats.buyers, stats.users_active)} активных)"),
         row(f"Новых {day_word}:", _num(stats.new_users)),
         "",
-        row("Заказов:", _num(stats.orders),
-            f"отменено {stats.orders_cancelled}" if stats.orders_cancelled else ""),
+        row("Заказов:", _num(stats.orders), ", ".join(
+            part for part in (
+                f"в работе {stats.orders_in_progress}" if stats.orders_in_progress else "",
+                f"отменено {stats.orders_cancelled}" if stats.orders_cancelled else "",
+            ) if part
+        )),
     ]
     return "\n".join(lines)
 
@@ -251,9 +259,9 @@ def _collect_history(credentials_json: str, days: list[str], tz: ZoneInfo) -> li
         if bucket is None:
             continue
         bucket["orders"] += 1
-        if order.get("status") == "cancelled":
+        if order.get("status") == CANCELLED:
             bucket["cancelled"] += 1
-        elif order.get("userId"):
+        elif order.get("status") == DELIVERED and order.get("userId"):
             bucket["buyers"].add(order["userId"])
 
     rows = []
@@ -300,11 +308,14 @@ BACKFILL_DAYS = 30
 
 
 async def backfill_history(repo, settings) -> int:
-    """Заполнить прошлые дни, если снимков ещё нет. Вернуть, сколько дней записано."""
+    """Пересчитать прошлые дни при старте. Вернуть, сколько дней записано.
+
+    Пересчёт идёт всегда, а не только на пустой базе: если правило подсчёта
+    поменялось (как с «получили заказ» вместо «заказали»), история должна
+    подтянуться к новому правилу. «Активных» при этом не трогаем.
+    """
     from app.clock import shift_local_date, today_local
 
-    if await repo.has_app_stats():
-        return 0
     today = today_local(settings.timezone)
     days = [shift_local_date(today, -i) for i in range(BACKFILL_DAYS, 0, -1)]
     rows = await collect_history(settings.firebase_credentials, days, settings.timezone)
@@ -312,3 +323,19 @@ async def backfill_history(repo, settings) -> int:
         await repo.save_app_stats(**row, keep_active=True)
     logger.info("Статистика ArbaFood: восстановлено %s дней истории", len(rows))
     return len(rows)
+
+
+
+async def refresh_recent_days(repo, settings, days: int = 2) -> None:
+    """Пересчитать последние дни, не трогая сохранённых «активных».
+
+    Заказ, сделанный в 23:50, доставляют уже после полуночи. Полуночный снимок
+    его ещё не видит, поэтому вчерашний день пересчитывается каждый час.
+    «Активных» задним числом не узнать — они остаются от живого снимка.
+    """
+    from app.clock import shift_local_date, today_local
+
+    today = today_local(settings.timezone)
+    targets = [shift_local_date(today, -i) for i in range(days, 0, -1)]
+    for row in await collect_history(settings.firebase_credentials, targets, settings.timezone):
+        await repo.save_app_stats(**row, keep_active=True)
