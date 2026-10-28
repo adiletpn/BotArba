@@ -151,7 +151,17 @@ def create_app(repo, settings, scheduler=None) -> web.Application:
         Заодно отдаём расписание: время следующего запуска — единственный
         способ снаружи убедиться, что задания считают время в нужной зоне.
         """
-        body = {"status": "ok", "balance_ops": await repo.balance()}
+        from app.services import app_stats
+
+        body = {
+            "status": "ok",
+            "balance_ops": await repo.balance(),
+            "stats": {
+                "enabled": settings.stats_enabled,
+                "days_saved": len(await repo.app_stats_rows()),
+                "last_error": app_stats.last_error,
+            },
+        }
         if scheduler is not None:
             body["jobs"] = {
                 job.id: job.next_run_time.astimezone(settings.timezone).isoformat()

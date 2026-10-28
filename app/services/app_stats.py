@@ -27,6 +27,15 @@ ACTIVE_WINDOW_DAYS = 7
 
 _APP_NAME = "arbafood-stats"
 
+#: Последняя ошибка статистики — для /health. Только текст исключения,
+#: без содержимого ключа: его тут не бывает.
+last_error: str | None = None
+
+
+def _remember(exc: Exception) -> None:
+    global last_error
+    last_error = f"{type(exc).__name__}: {exc}"[:300]
+
 
 @dataclass(frozen=True, slots=True)
 class AppStats:
@@ -128,11 +137,16 @@ def _collect(credentials_json: str, local_day: str, tz: ZoneInfo) -> AppStats:
 
 
 async def collect_stats(credentials_json: str, local_day: str, tz: ZoneInfo) -> AppStats:
+    global last_error
     try:
-        return await asyncio.to_thread(_collect, credentials_json, local_day, tz)
-    except StatsError:
+        result = await asyncio.to_thread(_collect, credentials_json, local_day, tz)
+        last_error = None
+        return result
+    except StatsError as exc:
+        _remember(exc)
         raise
     except Exception as exc:
+        _remember(exc)
         logger.exception("Статистика ArbaFood не собралась")
         raise StatsError(str(exc)) from exc
 
@@ -239,9 +253,11 @@ def _collect_history(credentials_json: str, days: list[str], tz: ZoneInfo) -> li
 async def collect_history(credentials_json: str, days: list[str], tz: ZoneInfo) -> list[dict]:
     try:
         return await asyncio.to_thread(_collect_history, credentials_json, days, tz)
-    except StatsError:
+    except StatsError as exc:
+        _remember(exc)
         raise
     except Exception as exc:
+        _remember(exc)
         logger.exception("История статистики ArbaFood не собралась")
         raise StatsError(str(exc)) from exc
 
