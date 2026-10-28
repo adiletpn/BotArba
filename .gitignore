@@ -26,3 +26,8 @@ venv/
 .idea/
 .vscode/
 *.log
+
+# Ключи сервисных аккаунтов (Firebase и т.п.) — полный доступ к чужой базе
+*firebase-adminsdk*.json
+firebase-key.json
+*service-account*.json
