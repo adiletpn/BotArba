@@ -11,20 +11,24 @@ from app.bot import keyboards, texts
 from app.bot.filters import says
 from app.bot.render import as_pre
 from app.clock import today_local
-from app.services.app_stats import StatsError, collect_stats, render_stats
+from app.services.app_stats import StatsError, capture_stats, render_stats
 
 router = Router(name="stats")
 
 
-async def stats_text(settings, local_day: str) -> str:
-    """Собрать и отрендерить статистику. Общая точка для кнопки и рассылки."""
-    stats = await collect_stats(settings.firebase_credentials, local_day, settings.timezone)
+async def stats_text(repo, settings, local_day: str) -> str:
+    """Посчитать статистику, сохранить снимок и отрендерить.
+
+    Общая точка для кнопки и рассылки. Снимок сохраняется каждый раз: из
+    таких снимков и складывается история «активных» в Google Таблице.
+    """
+    stats = await capture_stats(repo, settings, local_day)
     return render_stats(stats)
 
 
 @router.message(F.text == texts.BTN_STATS)
 @router.message(Command("stats"))
-async def show_stats(message: Message, state: FSMContext, settings) -> None:
+async def show_stats(message: Message, state: FSMContext, repo, settings) -> None:
     await state.clear()
     if not settings.stats_enabled:
         await message.answer(texts.STATS_DISABLED, reply_markup=keyboards.main_keyboard())
@@ -33,7 +37,7 @@ async def show_stats(message: Message, state: FSMContext, settings) -> None:
     # Выборка идёт ~3 секунды — показываем, что бот не завис.
     notice = await message.answer(texts.STATS_LOADING)
     try:
-        text = await stats_text(settings, today_local(settings.timezone))
+        text = await stats_text(repo, settings, today_local(settings.timezone))
     except StatsError:
         await notice.edit_text(texts.STATS_FAILED)
         return
@@ -41,5 +45,5 @@ async def show_stats(message: Message, state: FSMContext, settings) -> None:
 
 
 @router.message(StateFilter(None), says(*texts.SAY_STATS))
-async def show_stats_by_word(message: Message, state: FSMContext, settings) -> None:
-    await show_stats(message, state, settings)
+async def show_stats_by_word(message: Message, state: FSMContext, repo, settings) -> None:
+    await show_stats(message, state, repo, settings)

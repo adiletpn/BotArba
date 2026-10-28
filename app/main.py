@@ -78,6 +78,9 @@ async def run(settings: Settings) -> None:
 
     scheduler.start()
 
+    if settings.stats_enabled:
+        asyncio.create_task(_backfill_stats(repo, settings), name="stats-backfill")
+
     # Печатаем ФАКТИЧЕСКОЕ время следующего запуска, а не то, что мы задумали.
     # Пока лог показывал намерение («сводка в 21:00»), он скрывал, что триггер
     # считает время по UTC: расхождение всплыло только сообщением в 02:00.
@@ -105,6 +108,16 @@ async def run(settings: Settings) -> None:
         await runner.cleanup()
         await bot.session.close()
         await db.close()
+
+
+async def _backfill_stats(repo, settings) -> None:
+    """История статистики ArbaFood за 30 дней — один раз, если её ещё нет."""
+    from app.services.app_stats import StatsError, backfill_history
+
+    try:
+        await backfill_history(repo, settings)
+    except StatsError:
+        logger.warning("История статистики ArbaFood не восстановлена, попробую при следующем старте")
 
 
 def main() -> int:

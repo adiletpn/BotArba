@@ -180,3 +180,97 @@ def render_stats(stats: AppStats) -> str:
             f"отменено {stats.orders_cancelled}" if stats.orders_cancelled else ""),
     ]
     return "\n".join(lines)
+
+
+def _collect_history(credentials_json: str, days: list[str], tz: ZoneInfo) -> list[dict]:
+    """Восстановимые цифры за прошлые дни — без «активных».
+
+    Один проход по пользователям и один запрос заказов на весь период:
+    30 отдельных подсчётов заняли бы полторы минуты.
+    """
+    from firebase_admin import auth, firestore
+    from google.cloud.firestore_v1.base_query import FieldFilter
+
+    app = _firebase_app(credentials_json)
+    bounds = {day: _day_bounds(day, tz) for day in days}
+    period_start = min(start for start, _ in bounds.values())
+
+    created: list[int] = []
+    page = auth.list_users(app=app)
+    while page:
+        created.extend(u.user_metadata.creation_timestamp or 0 for u in page.users)
+        page = page.get_next_page()
+
+    per_day = {day: {"orders": 0, "cancelled": 0, "buyers": set()} for day in days}
+    for snapshot in (
+        firestore.client(app=app).collection("orders")
+        .where(filter=FieldFilter("placedAt", ">=", period_start))
+        .select(["placedAt", "status", "userId"]).stream()
+    ):
+        order = snapshot.to_dict() or {}
+        placed = order.get("placedAt")
+        if not placed:
+            continue
+        bucket = per_day.get(placed.astimezone(tz).date().isoformat())
+        if bucket is None:
+            continue
+        bucket["orders"] += 1
+        if order.get("status") == "cancelled":
+            bucket["cancelled"] += 1
+        elif order.get("userId"):
+            bucket["buyers"].add(order["userId"])
+
+    rows = []
+    for day, (start, end) in bounds.items():
+        start_ms, end_ms = int(start.timestamp() * 1000), int(end.timestamp() * 1000)
+        rows.append({
+            "day": day,
+            # «Всего пользователей» на конец того дня — по датам регистрации.
+            "users_total": sum(1 for c in created if c < end_ms),
+            "users_active": None,
+            "buyers": len(per_day[day]["buyers"]),
+            "orders": per_day[day]["orders"],
+            "orders_cancelled": per_day[day]["cancelled"],
+            "new_users": sum(1 for c in created if start_ms <= c < end_ms),
+        })
+    return rows
+
+
+async def collect_history(credentials_json: str, days: list[str], tz: ZoneInfo) -> list[dict]:
+    try:
+        return await asyncio.to_thread(_collect_history, credentials_json, days, tz)
+    except StatsError:
+        raise
+    except Exception as exc:
+        logger.exception("История статистики ArbaFood не собралась")
+        raise StatsError(str(exc)) from exc
+
+
+async def capture_stats(repo, settings, local_day: str) -> AppStats:
+    """Посчитать статистику за день и сохранить снимок в базу."""
+    stats = await collect_stats(settings.firebase_credentials, local_day, settings.timezone)
+    await repo.save_app_stats(
+        day=stats.day, users_total=stats.users_total, users_active=stats.users_active,
+        buyers=stats.buyers, orders=stats.orders, orders_cancelled=stats.orders_cancelled,
+        new_users=stats.new_users,
+    )
+    return stats
+
+
+#: Сколько дней истории восстановить при первом запуске.
+BACKFILL_DAYS = 30
+
+
+async def backfill_history(repo, settings) -> int:
+    """Заполнить прошлые дни, если снимков ещё нет. Вернуть, сколько дней записано."""
+    from app.clock import shift_local_date, today_local
+
+    if await repo.has_app_stats():
+        return 0
+    today = today_local(settings.timezone)
+    days = [shift_local_date(today, -i) for i in range(BACKFILL_DAYS, 0, -1)]
+    rows = await collect_history(settings.firebase_credentials, days, settings.timezone)
+    for row in rows:
+        await repo.save_app_stats(**row, keep_active=True)
+    logger.info("Статистика ArbaFood: восстановлено %s дней истории", len(rows))
+    return len(rows)

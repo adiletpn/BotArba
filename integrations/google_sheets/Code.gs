@@ -16,6 +16,7 @@ const TOKEN = 'ЗАМЕНИТЕ_НА_СВОЙ_ПАРОЛЬ';
 
 const OPERATIONS_SHEET = 'Операции';
 const DAILY_SHEET = 'Сводка по дням';
+const APP_STATS_SHEET = 'Статистика ArbaFood';
 
 /**
  * Палитра. Чернила нейтральные, цвет несёт ровно один смысл — знак суммы.
@@ -35,7 +36,8 @@ const NEGATIVE = '#d03b3b';     // расход
 
 const FONT = 'Roboto';
 const MONEY_FORMAT = '#,##0.##" ₸"';
-const COUNT_FORMAT = '0';
+const COUNT_FORMAT = '#,##0';
+const PERCENT_FORMAT = '0.0%';
 
 function doPost(e) {
   try {
@@ -54,6 +56,10 @@ function doPost(e) {
     const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
     renderDaily(spreadsheet, payload);
     renderOperations(spreadsheet, payload.operations);
+    // Блока может не быть, если бот старее скрипта — тогда лист не трогаем.
+    if (payload.app_stats) {
+      renderAppStats(spreadsheet, payload.app_stats);
+    }
     orderSheets(spreadsheet);
 
     return reply({
@@ -165,6 +171,12 @@ function drawTable(sheet, header, rows, startRow, options) {
   (options.moneyColumns || []).forEach(function (column) {
     sheet.getRange(startRow + 1, column, normalized.length, 1)
       .setNumberFormat(MONEY_FORMAT)
+      .setHorizontalAlignment('right');
+  });
+
+  (options.percentColumns || []).forEach(function (column) {
+    sheet.getRange(startRow + 1, column, normalized.length, 1)
+      .setNumberFormat(PERCENT_FORMAT)
       .setHorizontalAlignment('right');
   });
 
@@ -391,4 +403,47 @@ function renderDaily(spreadsheet, payload) {
   // Сегодняшний день — последняя строка: выделяем фоном, чтобы взгляд
   // падал на неё сразу при открытии.
   sheet.getRange(lastRow, 1, 1, block.header.length).setBackground('#f1f3f4');
+}
+
+
+const APP_STATS_WIDTHS = [110, 130, 150, 110, 100, 120, 90, 90, 100];
+
+/**
+ * Лист статистики приложения: строка на день.
+ *
+ * Пустое «Активных» у старых дней — не ошибка: эти дни восстановлены задним
+ * числом, а Firebase хранит только последний вход пользователя, не историю.
+ */
+function renderAppStats(spreadsheet, block) {
+  if (!block || !block.header) {
+    return;
+  }
+
+  const sheet = prepareSheet(spreadsheet, APP_STATS_SHEET, '#2a78d6');
+  const rows = block.rows || [];
+  const lastRow = drawTable(sheet, block.header, rows, 1, {
+    countColumns: [2, 3, 5, 7, 8, 9],
+    percentColumns: [4, 6],
+  });
+
+  APP_STATS_WIDTHS.forEach(function (width, index) {
+    if (index < block.header.length) {
+      sheet.setColumnWidth(index + 1, width);
+    }
+  });
+
+  if (rows.length === 0) {
+    return;
+  }
+
+  const width = block.header.length;
+  sheet.getRange(2, 1, lastRow - 1, 1).setFontColor(INK);
+  // Заказали — главная цифра дня, её выделяем насыщенностью.
+  sheet.getRange(2, 5, lastRow - 1, 1).setFontColor(INK).setFontWeight('bold');
+  // Отмены приглушаем: это фон, а не результат.
+  sheet.getRange(2, 9, lastRow - 1, 1).setFontColor(INK_MUTED);
+
+  drawBorders(sheet, 1, lastRow, width);
+  // Сегодняшний день — последняя строка.
+  sheet.getRange(lastRow, 1, 1, width).setBackground('#f1f3f4');
 }

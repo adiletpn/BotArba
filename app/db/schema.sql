@@ -101,3 +101,19 @@ CREATE TABLE IF NOT EXISTS webhook_logs (
 
 CREATE INDEX IF NOT EXISTS idx_webhook_logs_received_at
     ON webhook_logs (received_at DESC);
+
+-- Снимки статистики приложения ArbaFood по дням.
+-- Хранятся, потому что «активных» нельзя пересчитать задним числом: Firebase
+-- помнит только ПОСЛЕДНИЙ вход каждого пользователя, а не историю. Остальные
+-- цифры восстановимы, но снимок даёт и их — ровно как они выглядели.
+-- users_active NULL — день посчитан задним числом, активность неизвестна.
+CREATE TABLE IF NOT EXISTS app_stats_daily (
+    day              TEXT    PRIMARY KEY,          -- YYYY-MM-DD, Asia/Almaty
+    users_total      INTEGER NOT NULL,
+    users_active     INTEGER,
+    buyers           INTEGER NOT NULL,
+    orders           INTEGER NOT NULL,
+    orders_cancelled INTEGER NOT NULL,
+    new_users        INTEGER NOT NULL,
+    captured_at      TEXT    NOT NULL
+);

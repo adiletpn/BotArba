@@ -42,6 +42,37 @@ DAILY_HEADER = (
 
 SOURCE_LABELS = {"apipay": "Kaspi / ApiPay", "manual": "Вручную"}
 
+APP_STATS_HEADER = (
+    "Дата", "Пользователей", "Активных за 7 дн.", "% активных",
+    "Заказали", "% от активных", "Новых", "Заказов", "Отменено",
+)
+
+
+def _share(part, whole):
+    """Доля для процентного формата в таблице; пусто, если считать не из чего."""
+    if part is None or not whole:
+        return ""
+    return part / whole
+
+
+def _app_stats_rows(rows: list[dict]) -> list[list]:
+    """Строки листа статистики. Пустое «активных» — день восстановлен задним
+    числом: Firebase не хранит историю входов, только последний."""
+    return [
+        [
+            format_date_ru(row["day"]),
+            row["users_total"],
+            "" if row["users_active"] is None else row["users_active"],
+            _share(row["users_active"], row["users_total"]),
+            row["buyers"],
+            _share(row["buyers"], row["users_active"]),
+            row["new_users"],
+            row["orders"],
+            row["orders_cancelled"],
+        ]
+        for row in rows
+    ]
+
 
 def _tenge(tiyn: int) -> float:
     """Тиыны -> тенге числом, чтобы в таблице работали суммы и фильтры.
@@ -102,6 +133,10 @@ async def build_snapshot(repo, tz) -> dict:
     return {
         "operations": {"header": list(OPERATIONS_HEADER), "rows": operation_rows},
         "daily": {"header": list(DAILY_HEADER), "rows": daily_rows},
+        "app_stats": {
+            "header": list(APP_STATS_HEADER),
+            "rows": _app_stats_rows(await repo.app_stats_rows()),
+        },
         "summary": {
             "balance": _tenge(await repo.balance()),
             "today_income": _tenge(totals["income"]),

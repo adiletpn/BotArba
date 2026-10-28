@@ -43,3 +43,39 @@ def test_render_past_day_for_the_nightly_send():
     assert "итоги за 27.10.2026" in text
     assert "за день" in text
     assert "отменено" not in text, "строку отмен не показываем, если их не было"
+
+
+async def test_snapshots_feed_the_sheet(repo, settings):
+    from app.services.sheets import APP_STATS_HEADER, build_snapshot
+
+    # прошлый день восстановлен задним числом — активных не знаем
+    await repo.save_app_stats(day="2026-10-27", users_total=4389, users_active=None,
+                              buyers=35, orders=40, orders_cancelled=5, new_users=53)
+    await repo.save_app_stats(day="2026-10-28", users_total=4394, users_active=1669,
+                              buyers=3, orders=3, orders_cancelled=0, new_users=5)
+
+    block = (await build_snapshot(repo, settings.timezone))["app_stats"]
+    assert block["header"] == list(APP_STATS_HEADER)
+    past, today = block["rows"]
+    assert past[0] == "27.10.2026" and past[2] == "" and past[3] == ""
+    assert today[2] == 1669 and round(today[3], 2) == 0.38
+
+
+async def test_backfill_never_erases_a_known_active_count(repo):
+    """Пересчёт задним числом не должен затирать «активных», снятых вживую."""
+    await repo.save_app_stats(day="2026-10-28", users_total=4394, users_active=1669,
+                              buyers=3, orders=3, orders_cancelled=0, new_users=5)
+    await repo.save_app_stats(day="2026-10-28", users_total=4394, users_active=None,
+                              buyers=4, orders=4, orders_cancelled=0, new_users=5,
+                              keep_active=True)
+    (row,) = await repo.app_stats_rows()
+    assert row["users_active"] == 1669
+    assert row["orders"] == 4, "остальные цифры при этом обновились"
+
+
+async def test_live_snapshot_replaces_the_same_day(repo):
+    for orders in (3, 7):
+        await repo.save_app_stats(day="2026-10-28", users_total=4394, users_active=1669,
+                                  buyers=orders, orders=orders, orders_cancelled=0, new_users=5)
+    rows = await repo.app_stats_rows()
+    assert len(rows) == 1 and rows[0]["orders"] == 7

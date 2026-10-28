@@ -54,7 +54,7 @@ async def send_evening_summary(bot, repo, settings) -> None:
 
         try:
             day = report_date(now_utc(), settings.timezone)
-            messages.append(as_pre(await stats_text(settings, day)))
+            messages.append(as_pre(await stats_text(repo, settings, day)))
         except StatsError:
             logger.warning("Статистика ArbaFood не попала в рассылку")
 
@@ -79,6 +79,19 @@ async def run_sheets_sync(repo, settings) -> None:
         await sync(repo, settings)
     except Exception:
         logger.exception("Плановая выгрузка в Google Таблицы сорвалась")
+
+
+async def run_stats_capture(repo, settings) -> None:
+    """Снимок статистики ArbaFood за сегодня — для истории «активных»."""
+    if not settings.stats_enabled:
+        return
+    from app.clock import today_local
+    from app.services.app_stats import StatsError, capture_stats
+
+    try:
+        await capture_stats(repo, settings, today_local(settings.timezone))
+    except StatsError:
+        logger.warning("Часовой снимок статистики ArbaFood не удался")
 
 
 async def run_backup(db, settings) -> None:
@@ -143,6 +156,15 @@ async def create_scheduler(bot, db, repo, settings) -> AsyncIOScheduler:
             args=(repo, settings),
             id="sheets_sync",
             name="Выгрузка в Google Таблицы",
+        )
+
+    if settings.stats_enabled:
+        scheduler.add_job(
+            run_stats_capture,
+            CronTrigger(minute=15, timezone=tz),
+            args=(repo, settings),
+            id="stats_capture",
+            name="Снимок статистики ArbaFood",
         )
 
     scheduler.add_job(

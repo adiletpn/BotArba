@@ -588,3 +588,45 @@ class Repo:
         ) as cursor:
             row = await cursor.fetchone()
         return -int(row["total"])
+
+    # ---------- статистика ArbaFood ----------
+
+    async def save_app_stats(
+        self, *, day: str, users_total: int, users_active: int | None, buyers: int,
+        orders: int, orders_cancelled: int, new_users: int, keep_active: bool = False,
+    ) -> None:
+        """Записать снимок за день (повторный снимок того же дня заменяет прежний).
+
+        ``keep_active=True`` — для пересчёта задним числом: если за день уже
+        сохранено число активных, не затирать его пустотой.
+        """
+        await self._db.conn.execute(
+            f"""
+            INSERT INTO app_stats_daily (
+                day, users_total, users_active, buyers, orders,
+                orders_cancelled, new_users, captured_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (day) DO UPDATE SET
+                users_total = excluded.users_total,
+                users_active = {"COALESCE(excluded.users_active, app_stats_daily.users_active)" if keep_active else "excluded.users_active"},
+                buyers = excluded.buyers,
+                orders = excluded.orders,
+                orders_cancelled = excluded.orders_cancelled,
+                new_users = excluded.new_users,
+                captured_at = excluded.captured_at
+            """,
+            (day, users_total, users_active, buyers, orders, orders_cancelled,
+             new_users, to_utc_text(now_utc())),
+        )
+        await self._db.conn.commit()
+        self._changed()
+
+    async def app_stats_rows(self) -> list[dict]:
+        async with self._db.conn.execute(
+            "SELECT * FROM app_stats_daily ORDER BY day ASC"
+        ) as cursor:
+            return [dict(row) for row in await cursor.fetchall()]
+
+    async def has_app_stats(self) -> bool:
+        async with self._db.conn.execute("SELECT 1 FROM app_stats_daily LIMIT 1") as cursor:
+            return await cursor.fetchone() is not None
