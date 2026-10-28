@@ -18,10 +18,10 @@ from app.bot import texts
 
 
 def main_keyboard() -> ReplyKeyboardMarkup:
-    """Постоянная клавиатура: Баланс, Расход, История."""
+    """Постоянная клавиатура: Баланс, Статистика, Расход, История."""
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text=texts.BTN_BALANCE)],
+            [KeyboardButton(text=texts.BTN_BALANCE), KeyboardButton(text=texts.BTN_STATS)],
             [KeyboardButton(text=texts.BTN_EXPENSE), KeyboardButton(text=texts.BTN_HISTORY)],
         ],
         resize_keyboard=True,

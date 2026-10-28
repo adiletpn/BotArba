@@ -117,9 +117,16 @@ class Settings:
     sheets_token: str
     sheets_sync_minutes: int
 
+    #: JSON сервисного аккаунта Firebase приложения ArbaFood (для статистики).
+    firebase_credentials: str = ""
+
     @property
     def webhook_route(self) -> str:
         return f"/webhook/{self.apipay_webhook_path}"
+
+    @property
+    def stats_enabled(self) -> bool:
+        return bool(self.firebase_credentials)
 
     @property
     def sheets_enabled(self) -> bool:
@@ -189,4 +196,23 @@ def load_settings(env_file: str | os.PathLike[str] | None = ".env") -> Settings:
         sheets_webapp_url=_optional("SHEETS_WEBAPP_URL"),
         sheets_token=_optional("SHEETS_TOKEN"),
         sheets_sync_minutes=_positive_int("SHEETS_SYNC_MINUTES", 10),
+        firebase_credentials=_firebase_credentials(),
     )
+
+
+def _firebase_credentials() -> str:
+    """Ключ Firebase: содержимым (Railway) или путём к файлу (локально).
+
+    На Railway файл положить некуда, поэтому там JSON вставляется прямо в
+    переменную FIREBASE_CREDENTIALS_JSON. Локально удобнее указать путь.
+    """
+    inline = _optional("FIREBASE_CREDENTIALS_JSON")
+    if inline:
+        return inline
+    path = _optional("FIREBASE_CREDENTIALS_FILE")
+    if not path:
+        return ""
+    try:
+        return Path(path).read_text(encoding="utf-8")
+    except OSError as exc:
+        raise ConfigError(f"Не прочитать FIREBASE_CREDENTIALS_FILE={path!r}: {exc}") from exc

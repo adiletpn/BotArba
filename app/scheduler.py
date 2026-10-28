@@ -42,13 +42,29 @@ async def send_evening_summary(bot, repo, settings) -> None:
     """
     await run_sync(repo, settings)
 
-    text = as_pre(await summary_text(repo, settings))
-    for telegram_id in await repo.owner_ids():
+    messages = [as_pre(await summary_text(repo, settings))]
+
+    # Статистика ArbaFood — вторым сообщением, за тот же день, что и сводка.
+    # Если Firebase не ответил, финансовая сводка всё равно уходит.
+    if settings.stats_enabled:
+        from app.bot.handlers.balance import report_date
+        from app.bot.handlers.stats import stats_text
+        from app.clock import now_utc
+        from app.services.app_stats import StatsError
+
         try:
-            await bot.send_message(telegram_id, text, parse_mode="HTML")
-        except Exception:
-            # Один заблокировавший бота владелец не должен ломать рассылку остальным.
-            logger.exception("Не удалось отправить сводку пользователю %s", telegram_id)
+            day = report_date(now_utc(), settings.timezone)
+            messages.append(as_pre(await stats_text(settings, day)))
+        except StatsError:
+            logger.warning("Статистика ArbaFood не попала в рассылку")
+
+    for telegram_id in await repo.owner_ids():
+        for text in messages:
+            try:
+                await bot.send_message(telegram_id, text, parse_mode="HTML")
+            except Exception:
+                # Один заблокировавший бота владелец не должен ломать рассылку остальным.
+                logger.exception("Не удалось отправить сводку пользователю %s", telegram_id)
     logger.info("Вечерняя сводка отправлена")
 
 

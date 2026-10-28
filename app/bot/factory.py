@@ -19,6 +19,7 @@ from app.bot.handlers import (
     misc,
     settings as settings_handlers,
     start,
+    stats,
 )
 from app.bot.middlewares import WhitelistMiddleware
 
@@ -34,6 +35,7 @@ def create_bot(token: str) -> Bot:
 BOT_COMMANDS = (
     BotCommand(command="start", description="Запуск и стартовый баланс"),
     BotCommand(command="balance", description="Баланс и сводка за сегодня"),
+    BotCommand(command="stats", description="Пользователи и заказы ArbaFood"),
     BotCommand(command="expense", description="Внести расход"),
     BotCommand(command="history", description="Последние 10 операций"),
     BotCommand(command="day", description="Сводка за день, напр. /day 14.10"),
@@ -121,6 +123,7 @@ def create_dispatcher(repo, settings) -> Dispatcher:
     dispatcher.include_routers(
         start.router,
         balance.router,
+        stats.router,
         expense.router,
         undo.router,
         history.router,
