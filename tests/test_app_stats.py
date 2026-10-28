@@ -79,3 +79,22 @@ async def test_live_snapshot_replaces_the_same_day(repo):
                                   buyers=orders, orders=orders, orders_cancelled=0, new_users=5)
     rows = await repo.app_stats_rows()
     assert len(rows) == 1 and rows[0]["orders"] == 7
+
+
+def test_credentials_accept_json_and_base64():
+    import base64
+    import json
+
+    import pytest
+
+    from app.services.app_stats import StatsError, parse_credentials
+
+    info = {"type": "service_account", "project_id": "arbafood-taraz"}
+    raw = json.dumps(info)
+    assert parse_credentials(raw) == info
+    assert parse_credentials(base64.b64encode(raw.encode()).decode()) == info
+
+    # Ровно то, что получилось на Railway: переносы стали запятыми.
+    broken = '{,  "type": "service_account",,  "project_id": "arbafood-taraz",}'
+    with pytest.raises(StatsError):
+        parse_credentials(broken)

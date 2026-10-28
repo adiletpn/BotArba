@@ -63,13 +63,35 @@ def _firebase_app(credentials_json: str):
         return firebase_admin.get_app(_APP_NAME)
     except ValueError:
         pass
-    try:
-        info = json.loads(credentials_json)
-    except ValueError as exc:
-        raise StatsError("FIREBASE_CREDENTIALS_JSON — не JSON") from exc
+    info = parse_credentials(credentials_json)
     return firebase_admin.initialize_app(
         credentials.Certificate(info), name=_APP_NAME
     )
+
+
+def parse_credentials(raw: str) -> dict:
+    """Ключ сервисного аккаунта из переменной окружения: JSON или base64.
+
+    base64 — основной способ для Railway: одна строка без кавычек, запятых и
+    переносов. JSON с переносами строк при вставке в переменную портился
+    (переносы превращались в запятые), и ключ переставал читаться.
+    """
+    import base64
+
+    text = (raw or "").strip()
+    if not text:
+        raise StatsError("ключ Firebase пуст")
+    if text.startswith("{"):
+        try:
+            return json.loads(text)
+        except ValueError as exc:
+            raise StatsError(
+                "ключ Firebase — испорченный JSON; вставьте его в base64"
+            ) from exc
+    try:
+        return json.loads(base64.b64decode(text, validate=True).decode("utf-8"))
+    except (ValueError, UnicodeDecodeError) as exc:
+        raise StatsError("ключ Firebase не похож ни на JSON, ни на base64") from exc
 
 
 def _day_bounds(local_day: str, tz: ZoneInfo) -> tuple[datetime, datetime]:
