@@ -406,13 +406,15 @@ function renderDaily(spreadsheet, payload) {
 }
 
 
-const APP_STATS_WIDTHS = [110, 130, 150, 110, 100, 120, 90, 90, 100];
+const APP_STATS_WIDTHS = [100, 120, 160, 90, 130, 100, 110, 100, 100];
 
 /**
  * Лист статистики приложения: строка на день.
  *
- * Пустое «Активных» у старых дней — не ошибка: эти дни восстановлены задним
- * числом, а Firebase хранит только последний вход пользователя, не историю.
+ * Заголовки, ширины колонок и подсказки присылает бот (block.widths,
+ * block.notes) — так их можно менять без повторной вставки этого скрипта.
+ * Пустые «Активные» у старых дней — не ошибка: Firebase не хранит историю
+ * входов, только последний.
  */
 function renderAppStats(spreadsheet, block) {
   if (!block || !block.header) {
@@ -421,14 +423,27 @@ function renderAppStats(spreadsheet, block) {
 
   const sheet = prepareSheet(spreadsheet, APP_STATS_SHEET, '#2a78d6');
   const rows = block.rows || [];
+  const width = block.header.length;
   const lastRow = drawTable(sheet, block.header, rows, 1, {
     countColumns: [2, 3, 5, 7, 8, 9],
     percentColumns: [4, 6],
   });
 
-  APP_STATS_WIDTHS.forEach(function (width, index) {
-    if (index < block.header.length) {
-      sheet.setColumnWidth(index + 1, width);
+  // Заголовки в две строки: переносим и даём шапке высоту.
+  sheet.getRange(1, 1, 1, width).setWrap(true).setVerticalAlignment('middle');
+  sheet.setRowHeight(1, 46);
+
+  const widths = block.widths || APP_STATS_WIDTHS;
+  widths.forEach(function (px, index) {
+    if (index < width) {
+      sheet.setColumnWidth(index + 1, px);
+    }
+  });
+
+  // Подсказка при наведении на заголовок: как считается цифра.
+  (block.notes || []).forEach(function (note, index) {
+    if (index < width && note) {
+      sheet.getRange(1, index + 1).setNote(note);
     }
   });
 
@@ -436,14 +451,10 @@ function renderAppStats(spreadsheet, block) {
     return;
   }
 
-  const width = block.header.length;
   sheet.getRange(2, 1, lastRow - 1, 1).setFontColor(INK);
-  // Заказали — главная цифра дня, её выделяем насыщенностью.
   sheet.getRange(2, 5, lastRow - 1, 1).setFontColor(INK).setFontWeight('bold');
-  // Отмены приглушаем: это фон, а не результат.
   sheet.getRange(2, 9, lastRow - 1, 1).setFontColor(INK_MUTED);
 
   drawBorders(sheet, 1, lastRow, width);
-  // Сегодняшний день — последняя строка.
   sheet.getRange(lastRow, 1, 1, width).setBackground('#f1f3f4');
 }
