@@ -38,6 +38,7 @@ const FONT = 'Roboto';
 const MONEY_FORMAT = '#,##0.##" ₸"';
 const COUNT_FORMAT = '#,##0';
 const PERCENT_FORMAT = '0.0%';
+const TODAY_BG = '#eef4ea';     // строки сегодняшнего дня — сразу видно свежее
 
 function doPost(e) {
   try {
@@ -53,23 +54,43 @@ function doPost(e) {
       return reply({ error: 'доступ запрещён' });
     }
 
-    const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
-    renderDaily(spreadsheet, payload);
-    renderOperations(spreadsheet, payload.operations);
-    // Блока может не быть, если бот старее скрипта — тогда лист не трогаем.
-    if (payload.app_stats) {
-      renderAppStats(spreadsheet, payload.app_stats);
+    // Две выгрузки одновременно (плановая и после операции) рисовали листы
+    // поверх друг друга и падали на «чередующиеся цвета уже определены».
+    // Замок пускает их по очереди.
+    const lock = LockService.getScriptLock();
+    if (!lock.tryLock(60000)) {
+      return reply({ error: 'таблица занята другой выгрузкой, повторю позже' });
     }
-    orderSheets(spreadsheet);
-
-    return reply({
-      ok: true,
-      operations: (payload.operations.rows || []).length,
-      daily: (payload.daily.rows || []).length,
-    });
+    try {
+      return render(payload);
+    } finally {
+      lock.releaseLock();
+    }
   } catch (error) {
     return reply({ error: String(error) });
   }
+}
+
+/** Нарисовать все листы. Вызывается только под замком из doPost. */
+function render(payload) {
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  // Новый бот шлёт строки свежими сверху. Флага нет — бот старее скрипта,
+  // строки идут по-старому, и «сегодня» остаётся последней строкой.
+  const newestFirst = payload.newest_first === true;
+  renderDaily(spreadsheet, payload, newestFirst);
+  const today = payload.summary ? payload.summary.today : '';
+  renderOperations(spreadsheet, payload.operations, today);
+  // Блока может не быть, если бот старее скрипта — тогда лист не трогаем.
+  if (payload.app_stats) {
+    renderAppStats(spreadsheet, payload.app_stats, newestFirst);
+  }
+  orderSheets(spreadsheet);
+
+  return reply({
+    ok: true,
+    operations: (payload.operations.rows || []).length,
+    daily: (payload.daily.rows || []).length,
+  });
 }
 
 function doGet() {
@@ -232,7 +253,7 @@ function moneySignRules(sheet, column, firstDataRow, lastRow) {
 
 const OPERATIONS_WIDTHS = [56, 92, 64, 128, 116, 128, 260, 132, 150, 92];
 
-function renderOperations(spreadsheet, block) {
+function renderOperations(spreadsheet, block, today) {
   if (!block || !block.header) {
     return;
   }
@@ -269,6 +290,17 @@ function renderOperations(spreadsheet, block) {
   moneySignRules(sheet, 5, 2, lastRow).forEach(function (rule) {
     rules.push(rule);
   });
+
+  // Сегодняшние операции — светло-зелёным фоном: их ищут чаще всего.
+  if (today) {
+    rules.push(
+      SpreadsheetApp.newConditionalFormatRule()
+        .whenFormulaSatisfied('=$B2="' + today + '"')
+        .setBackground(TODAY_BG)
+        .setRanges([sheet.getRange(2, 1, lastRow - 1, width)])
+        .build()
+    );
+  }
 
   sheet.setConditionalFormatRules(rules);
 
@@ -353,7 +385,7 @@ function drawHeadline(sheet, summary, generatedAt, width) {
   sheet.setRowHeight(3, 26);
 }
 
-function renderDaily(spreadsheet, payload) {
+function renderDaily(spreadsheet, payload, newestFirst) {
   const block = payload.daily;
   if (!block || !block.header) {
     return;
@@ -400,9 +432,10 @@ function renderDaily(spreadsheet, payload) {
 
   drawBorders(sheet, headerRow, lastRow, block.header.length);
 
-  // Сегодняшний день — последняя строка: выделяем фоном, чтобы взгляд
-  // падал на неё сразу при открытии.
-  sheet.getRange(lastRow, 1, 1, block.header.length).setBackground('#f1f3f4');
+  // Сегодняшний день выделяем фоном, чтобы взгляд падал на него сразу.
+  // Он первой строкой под шапкой, если бот шлёт свежее сверху.
+  const todayRow = newestFirst ? firstDataRow : lastRow;
+  sheet.getRange(todayRow, 1, 1, block.header.length).setBackground(TODAY_BG);
 }
 
 
@@ -416,7 +449,7 @@ const APP_STATS_WIDTHS = [100, 120, 160, 90, 130, 100, 110, 100, 100];
  * Пустые «Активные» у старых дней — не ошибка: Firebase не хранит историю
  * входов, только последний.
  */
-function renderAppStats(spreadsheet, block) {
+function renderAppStats(spreadsheet, block, newestFirst) {
   if (!block || !block.header) {
     return;
   }
@@ -456,5 +489,5 @@ function renderAppStats(spreadsheet, block) {
   sheet.getRange(2, 9, lastRow - 1, 1).setFontColor(INK_MUTED);
 
   drawBorders(sheet, 1, lastRow, width);
-  sheet.getRange(lastRow, 1, 1, width).setBackground('#f1f3f4');
+  sheet.getRange(newestFirst ? 2 : lastRow, 1, 1, width).setBackground(TODAY_BG);
 }

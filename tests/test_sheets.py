@@ -75,11 +75,17 @@ async def test_daily_sheet_carries_a_running_balance(repo, settings):
         occurred_at=datetime(2026, 10, 13, 6, 0, tzinfo=timezone.utc),
     )
 
-    rows = (await build_snapshot(repo, settings.timezone))["daily"]["rows"]
+    snapshot = await build_snapshot(repo, settings.timezone)
+    rows = snapshot["daily"]["rows"]
 
-    assert [row[0] for row in rows] == ["12.10.2026", "13.10.2026"]
-    assert rows[0][5] == 1_000_000          # баланс на конец 12-го
-    assert rows[1][5] == 1_050_000          # и на конец 13-го
+    # Свежий день — первой строкой, чтобы не листать вниз.
+    assert [row[0] for row in rows] == ["13.10.2026", "12.10.2026"]
+    assert rows[0][5] == 1_050_000          # баланс на конец 13-го
+    assert rows[1][5] == 1_000_000          # и на конец 12-го
+    assert snapshot["newest_first"] is True
+
+    operations = snapshot["operations"]["rows"]
+    assert [row[1] for row in operations] == ["13.10.2026", "12.10.2026"]
 
 
 async def _fake_apps_script(received: list, *, token: str):

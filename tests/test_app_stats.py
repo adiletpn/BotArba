@@ -57,7 +57,7 @@ async def test_snapshots_feed_the_sheet(repo, settings):
 
     block = (await build_snapshot(repo, settings.timezone))["app_stats"]
     assert block["header"] == list(APP_STATS_HEADER)
-    past, today = block["rows"]
+    today, past = block["rows"]   # свежий день — первой строкой
     assert past[0] == "27.10.2026" and past[2] == "" and past[3] == ""
     assert today[2] == 1669 and round(today[3], 2) == 0.38
 

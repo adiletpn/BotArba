@@ -147,6 +147,12 @@ async def build_snapshot(repo, tz) -> dict:
     today = today_local(tz)
     totals = await repo.day_totals(today)
 
+    # Свежее — сверху во всех листах: таблицу открывают посмотреть, что было
+    # сегодня, и листать тысячи строк вниз ради этого неудобно. Баланс на конец
+    # дня уже посчитан по порядку от старых к новым, разворот его не ломает.
+    operation_rows.reverse()
+    daily_rows.reverse()
+
     return {
         "operations": {"header": list(OPERATIONS_HEADER), "rows": operation_rows},
         "daily": {"header": list(DAILY_HEADER), "rows": daily_rows},
@@ -154,8 +160,11 @@ async def build_snapshot(repo, tz) -> dict:
             "header": list(APP_STATS_HEADER),
             "widths": [width for _, width, _ in APP_STATS_COLUMNS],
             "notes": [note for _, _, note in APP_STATS_COLUMNS],
-            "rows": _app_stats_rows(await repo.app_stats_rows()),
+            "rows": _app_stats_rows(await repo.app_stats_rows())[::-1],
         },
+        # Скрипт в таблице по этому флагу подсвечивает сегодняшний день
+        # первой строкой, а не последней.
+        "newest_first": True,
         "summary": {
             "balance": _tenge(await repo.balance()),
             "today_income": _tenge(totals["income"]),
@@ -207,13 +216,19 @@ async def push_snapshot(settings, snapshot: dict) -> bool:
         return False
 
 
+#: Выгрузки по очереди: плановая, фоновая и /export иначе приходили в
+#: таблицу одновременно и рисовали листы поверх друг друга.
+_sync_lock = asyncio.Lock()
+
+
 async def sync(repo, settings) -> bool:
     """Выгрузить базу в таблицу. Вернуть True при успехе."""
     if not settings.sheets_enabled:
         return False
 
-    snapshot = await build_snapshot(repo, settings.timezone)
-    ok = await push_snapshot(settings, snapshot)
+    async with _sync_lock:
+        snapshot = await build_snapshot(repo, settings.timezone)
+        ok = await push_snapshot(settings, snapshot)
     if ok:
         logger.info(
             "Google Таблицы обновлены: операций %s, дней %s",

@@ -23,7 +23,7 @@ class Repo:
     def __init__(self, db: Database, tz: ZoneInfo) -> None:
         self._db = db
         self._tz = tz
-        self._on_change: Callable[[], None] | None = None
+        self._listeners: list[Callable[[], None]] = []
 
     @property
     def tz(self) -> ZoneInfo:
@@ -35,17 +35,23 @@ class Repo:
         Нужно выгрузке в Google Таблицы. Репозиторий при этом о таблицах
         ничего не знает — он просто дёргает колбэк, поэтому слой доступа к
         базе не зависит от интеграций.
+
+        Заменяет всех прежних слушателей; None — отписать всех.
         """
-        self._on_change = listener
+        self._listeners = [listener] if listener is not None else []
+
+    def add_change_listener(self, listener: Callable[[], None]) -> None:
+        """Добавить ещё одного слушателя, не трогая остальных (живое табло)."""
+        self._listeners.append(listener)
 
     def _changed(self) -> None:
-        if self._on_change is None:
-            return
-        try:
-            self._on_change()
-        except Exception:
-            # Сломанный слушатель не должен ронять запись операции.
-            logger.exception("Слушатель изменений упал")
+        for listener in self._listeners:
+            try:
+                listener()
+            except Exception:
+                # Сломанный слушатель не должен ронять запись операции
+                # и не должен мешать остальным слушателям.
+                logger.exception("Слушатель изменений упал")
 
     # ---------- users / белый список ----------
 
@@ -371,6 +377,35 @@ class Repo:
         ) as cursor:
             rows = await cursor.fetchall()
         return [Operation.from_row(row) for row in rows]
+
+    async def operations_after(self, operation_id: int, limit: int = 100) -> list[Operation]:
+        """Операции, записанные после указанной, — для живых уведомлений.
+
+        По id, а не по времени: продажа из истории Kaspi приходит задним
+        числом, и по occurred_at её бы пропустили.
+        """
+        async with self._db.conn.execute(
+            "SELECT * FROM operations WHERE id > ? ORDER BY id LIMIT ?",
+            (operation_id, limit),
+        ) as cursor:
+            rows = await cursor.fetchall()
+        return [Operation.from_row(row) for row in rows]
+
+    async def max_operation_id(self) -> int:
+        async with self._db.conn.execute(
+            "SELECT COALESCE(MAX(id), 0) AS top FROM operations"
+        ) as cursor:
+            row = await cursor.fetchone()
+        return int(row["top"])
+
+    async def user_name(self, telegram_id: int | None) -> str:
+        if telegram_id is None:
+            return ""
+        async with self._db.conn.execute(
+            "SELECT name FROM users WHERE telegram_id = ?", (telegram_id,)
+        ) as cursor:
+            row = await cursor.fetchone()
+        return row["name"] if row else ""
 
     async def all_operations(self, limit: int = 20_000) -> list[Operation]:
         """Все операции по возрастанию — для выгрузки в таблицу.

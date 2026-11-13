@@ -14,6 +14,7 @@ from app.config import ConfigError, Settings, load_settings
 from app.db.database import Database
 from app.db.repo import Repo
 from app.scheduler import create_scheduler
+from app.services.live import LiveBroadcaster
 from app.services.sheets import SheetsSyncer
 from app.web.server import create_app
 
@@ -76,6 +77,12 @@ async def run(settings: Settings) -> None:
     syncer.start()
     syncer.request()   # первая выгрузка при старте, чтобы таблица догнала базу
 
+    # Живой режим (/live): табло и уведомления о каждой операции.
+    live = LiveBroadcaster(bot, repo, settings)
+    repo.add_change_listener(live.request)
+    dispatcher["live"] = live
+    live.start()
+
     scheduler.start()
 
     if settings.stats_enabled:
@@ -105,6 +112,7 @@ async def run(settings: Settings) -> None:
         scheduler.shutdown(wait=False)
         repo.set_change_listener(None)
         await syncer.stop()
+        await live.stop()
         await runner.cleanup()
         await bot.session.close()
         await db.close()
