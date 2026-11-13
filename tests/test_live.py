@@ -8,6 +8,7 @@ import pytest
 
 from app.services.live import (
     NOTIFY_BATCH_LIMIT,
+    NOTIFY_MAX_ROWS,
     WATERMARK_KEY,
     LiveBroadcaster,
     render_board,
@@ -102,7 +103,7 @@ async def test_each_new_operation_is_sent_once(two_owners, settings):
     texts = [text for chat, text in bot.sent if chat == OWNER_ID]
     assert len(texts) == 2
     assert "💰 +4 500 ₸ · Kaspi" in texts[0]
-    assert "Баланс: 6 800 ₸" in texts[1]
+    assert "Баланс: <b>6 800 ₸</b>" in texts[1]
 
 
 async def test_own_expense_is_not_echoed_back(two_owners, settings):
@@ -181,3 +182,37 @@ async def test_repo_feeds_several_listeners(repo):
     repo.add_change_listener(lambda: calls.append("live"))
     await _sale(repo, 1, 1_000)
     assert calls == ["sheets", "live"]
+
+
+async def test_category_with_html_is_escaped(two_owners, settings):
+    """У бота parse_mode=HTML: «<опт>» без экранирования уронило бы отправку."""
+    repo = two_owners
+    bot = FakeBot()
+    live = LiveBroadcaster(bot, repo, settings)
+    await live.set_notify(OTHER_ID, True)
+    await live.tick()
+
+    await repo.add_operation(type="expense", amount=-1_000 * 100, category="Закуп <опт> & Co",
+                             created_by=OWNER_ID)
+    await live.tick()
+
+    assert "Закуп &lt;опт&gt; &amp; Co" in bot.sent[0][1]
+
+
+async def test_huge_burst_stays_within_telegram_limit(two_owners, settings):
+    repo = two_owners
+    bot = FakeBot()
+    live = LiveBroadcaster(bot, repo, settings)
+    await live.set_notify(OWNER_ID, True)
+    await live.tick()
+
+    for n in range(150):
+        await _sale(repo, n, 1_000)
+    await live.tick()
+    await live.tick()   # остаток больше 100 — вторым проходом
+
+    assert len(bot.sent) == 2
+    for _, text in bot.sent:
+        assert len(text) < 4096
+        assert text.count("💰") == NOTIFY_MAX_ROWS
+    assert "…и ещё 80 на +80 000 ₸" in bot.sent[0][1]

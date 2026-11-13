@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import asyncio
+import html
 import logging
 from datetime import datetime
 
@@ -38,6 +39,10 @@ BOARD_RECENT = 8
 #: Если за один раз пришло больше операций, они уходят одним сообщением:
 #: например, после простоя сверка подтянет сразу пачку оплат.
 NOTIFY_BATCH_LIMIT = 5
+
+#: Сколько строк максимум в одном сводном уведомлении: лимит Telegram —
+#: 4096 символов, а после простоя сверка может принести сотню оплат разом.
+NOTIFY_MAX_ROWS = 20
 
 #: Раз в столько секунд табло перерисовывается и без операций, чтобы после
 #: полуночи оно показало новый день, а не застряло на вчерашнем.
@@ -91,16 +96,24 @@ async def render_board(repo, tz, now: datetime | None = None) -> str:
 
 
 def render_notification(operations: list[Operation], balance: int, tz, names: dict[int, str]) -> str:
-    """Текст уведомления об одной или нескольких новых операциях."""
+    """Текст уведомления об одной или нескольких новых операциях.
+
+    Возвращает HTML: у бота parse_mode=HTML по умолчанию, поэтому статья
+    расхода вида «Закуп <опт>» без экранирования уронила бы отправку.
+    """
     rows = []
-    for op in operations:
+    for op in operations[:NOTIFY_MAX_ROWS]:
         icon = "💰" if op.amount > 0 else "💸"
         row = f"{icon} {format_delta(op.amount)} · {describe(op)}"
         who = names.get(op.created_by or 0)
         if who:
             row += f" ({who})"
-        rows.append(row)
-    rows += ["", f"Баланс: {format_tenge(balance)}"]
+        rows.append(html.escape(row))
+    hidden = operations[NOTIFY_MAX_ROWS:]
+    if hidden:
+        total = sum(op.amount for op in hidden)
+        rows.append(f"…и ещё {len(hidden)} на {format_delta(total)}")
+    rows += ["", f"Баланс: <b>{format_tenge(balance)}</b>"]
     return "\n".join(rows)
 
 
@@ -197,7 +210,7 @@ class LiveBroadcaster:
             for chunk in chunks:
                 text = render_notification(chunk, balance, self._settings.timezone, names)
                 try:
-                    await self._bot.send_message(telegram_id, text)
+                    await self._bot.send_message(telegram_id, text, parse_mode="HTML")
                 except Exception as exc:
                     logger.warning("Уведомление пользователю %s не ушло: %s", telegram_id, exc)
                     break
